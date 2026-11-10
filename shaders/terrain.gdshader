@@ -1,9 +1,19 @@
 // Sol du globe : couleur « macro » par sommet (couverture des sols ESA WorldCover, pente, neige)
-// + textures de détail de près (herbe, sous-bois, champ, ville, terre, roche, neige).
+// + textures de détail de près (herbe, sous-bois, champ, ville, terre, roche, neige)
+// + neige réelle (GFS) + lumières des villes la nuit (NASA Black Marble, ~5 km, lues par pixel dans une
+// texture mondiale lat/lon, allumées seulement du côté nuit de la planète).
 // Coordonnées de texture : position dans le repère planète (projection sur les 3 axes, « triplanaire »),
 // recalée par chunk (CUSTOM1 = centre du chunk modulo 1 024 m) pour rester continue d'un chunk à l'autre.
 shader_type spatial;
-render_mode cull_back, diffuse_burley;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
+uniform sampler2D city_lights : filter_linear_mipmap, repeat_enable;
+uniform vec3 sun_dir = vec3(0.0, 1.0, 0.0);   // vers le Soleil, repère monde
+uniform vec3 planet_center = vec3(0.0, -6371000.0, 0.0);
+uniform mat3 planet_basis_inv = mat3(1.0);    // monde → repère planète (Y = axe des pôles)
+uniform float lights_strength = 1.0;           // atténué près du sol (Planet.cs)
+uniform vec3 lights_color : source_color = vec3(1.0, 0.76, 0.42);
+varying vec3 world_pos;
 
 uniform sampler2DArray layers : filter_linear_mipmap_anisotropic, repeat_enable; // valeurs sRGB brutes (rapports autour de 1)
 // 0 herbe, 1 sous-bois, 2 champ, 3 ville, 4 terre, 5 roche, 6 neige
@@ -30,6 +40,7 @@ void vertex() {
 	w4 = CUSTOM0;
 	rock_snow = UV;
 	geo = CUSTOM2.xyz;
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 float weather_snow() {
@@ -87,4 +98,17 @@ void fragment() {
 		ALBEDO = mix(macro, ground, fade);
 	}
 	ROUGHNESS = 0.95;
+
+	// Lumières des villes, côté nuit
+	vec3 up = normalize(world_pos - planet_center);
+	float night = smoothstep(0.03, -0.10, dot(up, sun_dir)); // s'allume après le coucher du soleil
+	if (night > 0.0) {
+		vec3 p = planet_basis_inv * up;                       // x = cos(lat)cos(lon), y = sin(lat), z = -cos(lat)sin(lon)
+		float lat = asin(clamp(p.y, -1.0, 1.0));
+		float lon = atan(-p.z, p.x);
+		vec2 luv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
+		float c = texture(city_lights, luv).r;
+		float l = c * 3.0 + c * c * 6.0;                      // centres-villes plus vifs que la banlieue
+		EMISSION = lights_color * l * night * lights_strength;
+	}
 }

@@ -34,6 +34,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | T | afficher / masquer routes, chemins et voies ferrées |
 | N | afficher / masquer les noms des villes, villages et rues |
 | P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
+| H | près d'un arrêt en Suisse : tableau des départs (1–9 choisir, ↑/↓ plus tard) ; en voyage : descendre au prochain arrêt |
 | M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
@@ -101,6 +102,14 @@ supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien 
   toits et ne traverse plus les murs.
 - Tests : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,300 --walktest=200` (Berne, marche vers un mur) ;
   ajouter `--climb` pour escalader (le personnage monte à 12 m, traverse le toit et redescend de l'autre côté).
+
+## Lumières des villes
+
+La nuit, les villes s'allument d'après l'image **NASA Black Marble 2016** (satellite Suomi NPP, capteur VIIRS).
+Les images de la NASA ne sont pas soumises au droit d'auteur : usage commercial autorisé, avec mention de la source
+et sans laisser croire à un soutien de la NASA. Le shader du terrain (`shaders/terrain.gdshader`) lit la carte par pixel
+et ne l'allume que du côté nuit de la planète ; près du sol, la lueur est atténuée et les fenêtres des bâtiments prennent le relais.
+La carte est régénérée par le workflow « Lumières des villes » (`tools/nightlights/build_nightlights.py`).
 
 ## Météo et heure réelles
 
@@ -207,7 +216,33 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 |---|---|---|
 | ![](docs/transports-berne.jpg) | ![](docs/transports-geneve.jpg) | ![](docs/aeroport-zurich.jpg) |
 
-Les lignes et horaires (trains, bus, avions qui circulent) ne sont pas encore là : voir « Limites connues ».
+### Voyager en transports publics suisses, aux horaires réels
+
+Tous les trains, trams, bus, cars postaux, bateaux, funiculaires et téléphériques de Suisse, avec leur horaire
+officiel (**opentransportdata.swiss**, GTFS, usage commercial autorisé avec mention de la source) :
+
+1. Près d'un arrêt (≤ 250 m), **H** affiche les prochains départs de tout le pôle (la gare et les arrêts de bus et
+   de tram autour), à l'heure suisse du jeu : l'heure réelle, ou décalée avec + / −.
+2. **1–9** pour choisir. On attend sur place : le véhicule arrive quelques minutes avant, et l'on monte
+   automatiquement à l'heure du départ si l'on est à moins de 300 m. **H** pendant l'attente : renoncer.
+3. Le voyage dure le **temps réel** de l'horaire (Berne → Fribourg : 33 min). La caméra suit le véhicule
+   (molette = distance, V = vue du passager) ; le panneau montre les prochains arrêts. **H** : descendre au prochain
+   arrêt (on descend aussi au terminus), on repart à pied. + / − avancent l'heure : le voyage avance d'autant.
+
+- `tools/transport/build_timetable.py` réduit le GTFS suisse (2,4 Go, 1,9 million de courses par an) à un fichier de
+  12 Mo : les courses qui desservent les mêmes arrêts avec les mêmes temps de parcours partagent un « motif ».
+- Workflow GitHub Actions « Horaires transports suisses » : chaque jeudi, nouvelle version dans la release
+  `timetable-latest` ; le jeu la télécharge (au plus une fois par jour) et la garde en cache (`user://cache/`).
+- `Data/Timetable.cs` : lecture et recherche des départs ; `TransitRide.cs` : tableau, attente, voyage, descente.
+
+Limites de cette première version : le véhicule va **en ligne droite** d'un arrêt à l'autre en suivant le relief
+(pas encore sur les vrais rails, ni dans les tunnels) et c'est une simple boîte ; pas encore de retards en temps
+réel ni d'autres véhicules qui circulent. Prochaine étape : tracés réels des lignes (pfaedle + OpenStreetMap dans
+le workflow), puis retards en direct (GTFS-RT d'opentransportdata.swiss, clé gratuite).
+
+| Tableau des départs, gare de Berne | Dans le S1 vers Fribourg |
+|---|---|
+| ![](docs/departs-berne.jpg) | ![](docs/train-s1.jpg) |
 ## Menu de départ : commencer n'importe où
 
 Au lancement (et ensuite avec **M**), le joueur choisit où commencer :
@@ -246,8 +281,10 @@ sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
   Toits : à deux pans, à quatre pans, en pavillon ou en appentis quand OSM le dit (ou par défaut pour les petites
   maisons à peu près rectangulaires), sinon plats. Les « building parts » d'OSM (églises, tours…) remplacent le contour.
   Couleurs de façade et de toit d'OSM quand elles existent, sinon selon le matériau ou le type.
-- `BuildingsLayer.cs` : invite, liste des villes, tuiles, et un shader qui dessine les fenêtres (étages de 3 m) et les
-  allume au hasard à la tombée de la nuit.
+- `BuildingsLayer.cs` : invite (seulement à plus de 500 m au-dessus du sol, pour ne pas encombrer la vue en ville),
+  liste des villes, tuiles, et un shader qui dessine les fenêtres (étages de 3 m) et les allume la nuit selon l'heure
+  locale : ~50 % en soirée, ~6 % entre 1 h et 5 h, un regain vers 6–7 h ; ce sont toujours les mêmes fenêtres qui
+  s'éteignent.
 
 Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 
@@ -270,6 +307,7 @@ textures de façades.
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Relief Suisse (streaming) | swissALTI3D © swisstopo (données ouvertes OGD, usage commercial autorisé avec mention de la source) | 0,5 m |
+| `data/nightlights/nightlights.bin.gz` | NASA Earth Observatory, Black Marble 2016 (Suomi NPP VIIRS), domaine public | ~5 km |
 | `data/swissalti3d_index.bin` | index des tuiles swissALTI3D (API STAC de data.geo.admin.ch), `tools/swissalti3d/build_index.py` | 1 km |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
@@ -278,6 +316,7 @@ textures de façades.
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
 | `data/geo/cities.tsv.gz` | Natural Earth 1:10m populated places (domaine public) | 7 342 villes |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
+| Horaires suisses (release `timetable-latest`) | opentransportdata.swiss, GTFS (usage libre, mention de la source obligatoire) | toutes les courses de l'année |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
 Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
@@ -307,9 +346,8 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 - Couleurs par sommet provisoires → textures + shader (herbe, roche, neige selon pente et altitude).
 - Relief plus fin que 30 m : pays par pays (Suisse 0,5 m avec swissALTI3D, France 1 m avec le RGE ALTI…).
 - Copernicus n'a pas de fichier pour l'Arménie et l'Azerbaïdjan (relief à ~5 km là-bas pour l'instant).
-- Transports qui circulent : tracés des lignes (relations OSM `route=bus/tram/train/subway/ferry`, ODbL) et horaires
-  réels (GTFS : opentransportdata.swiss pour la Suisse, transport.data.gouv.fr pour la France…, licence à vérifier
-  flux par flux pour un jeu vendu). Avions : OurAirports + lignes aériennes à reconstituer (pas de source gratuite
+- Transports : tracés réels des lignes suisses, retards en direct, puis autres pays selon la ville de départ des
+  joueurs (GTFS : transport.data.gouv.fr pour la France…, licence à vérifier flux par flux pour un jeu vendu). Avions : OurAirports + lignes aériennes à reconstituer (pas de source gratuite
   d'horaires mondiaux utilisable commercialement ; OpenSky est réservé au non commercial).
 - Océan = surface plate colorée → shader d'eau, vagues, physique de flottaison.
 - Atmosphère : ciel procédural Godot → diffusion atmosphérique vue de l'espace.
