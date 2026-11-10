@@ -15,10 +15,11 @@ namespace SteamEarth;
 public partial class Planet : Node3D
 {
     [Export] public int MaxLevel = 15;          // niveau 15 ≈ 10 m entre sommets (données 30 m)
-    [Export] public int HdMaxLevel = 19;        // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
-    [Export] public double SplitFactor = 1.6;   // plus grand = plus de détail, plus de chunks
     [Export] public int Resolution = 32;        // quads par côté de chunk
-    [Export] public int MaxConcurrentBuilds = 6;
+    // Réglés par le niveau de qualité graphique (GraphicsQuality) :
+    public int HdMaxLevel = 19;                 // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
+    public double SplitFactor = 1.6;            // plus grand = plus de détail, plus de chunks
+    public int MaxConcurrentBuilds = 6;
 
     public FlyCamera Camera;
     public int VisibleChunks { get; private set; }
@@ -28,7 +29,10 @@ public partial class Planet : Node3D
     public bool Idle => _inFlight == 0 && _done.IsEmpty && !_wantedMore;
 
     QuadNode[] _roots;
-    StandardMaterial3D _material;
+    ShaderMaterial _material;
+
+    /// <summary>Direction du Soleil (repère monde), fournie par l'atmosphère, pour allumer les villes côté nuit.</summary>
+    public Vector3 SunDirWorld = Vector3.Up;
     int _inFlight;
     bool _wantedMore;
     readonly ConcurrentQueue<(QuadNode node, ChunkData data)> _done = new();
@@ -52,14 +56,42 @@ public partial class Planet : Node3D
 
     public override void _Ready()
     {
-        _material = new StandardMaterial3D
-        {
-            VertexColorUseAsAlbedo = true,
-            VertexColorIsSrgb = true,
-            Roughness = 0.95f,
-        };
+        _material = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
+        var lights = NightLights.CreateTexture();
+        if (lights != null) _material.SetShaderParameter("city_lights", lights);
         _roots = new QuadNode[6];
         for (int f = 0; f < 6; f++) _roots[f] = MakeNode(f, 0, -1, -1, 2);
+        ReadQuality(GraphicsQuality.Current);
+        GraphicsQuality.Changed += OnQualityChanged;
+    }
+
+    public override void _ExitTree() => GraphicsQuality.Changed -= OnQualityChanged;
+
+    void ReadQuality(QualityProfile q)
+    {
+        SplitFactor = q.TerrainSplitFactor;
+        HdMaxLevel = Math.Max(MaxLevel, q.TerrainHdMaxLevel);
+        MaxConcurrentBuilds = q.TerrainBuildThreads;
+    }
+
+    void OnQualityChanged(QualityProfile q, QualityProfile old)
+    {
+        ReadQuality(q);
+        // Végétation changée : les chunks visibles sont reconstruits peu à peu (même mécanisme que l'arrivée de données fines).
+        bool vegetation = q.VegetationDensity != old.VegetationDensity || q.VegetationMaxSpacing != old.VegetationMaxSpacing;
+        var terrainShadow = GraphicsQuality.ShadowFor(ShadowCaster.Terrain);
+        var treeShadow = GraphicsQuality.ShadowFor(ShadowCaster.Trees);
+        void Walk(QuadNode n)
+        {
+            if (n.Mesh != null)
+            {
+                n.Mesh.CastShadow = terrainShadow;
+                foreach (var c in n.Mesh.GetChildren()) if (c is MultiMeshInstance3D mm) mm.CastShadow = treeShadow;
+                if (vegetation && n.Ready) { n.Incomplete = true; n.BuiltVersion = -1; }
+            }
+            if (n.Children != null) foreach (var c in n.Children) Walk(c);
+        }
+        foreach (var r in _roots) Walk(r);
     }
 
     QuadNode MakeNode(int face, int level, double u0, double v0, double size, double meanHeight = 0)
@@ -100,7 +132,7 @@ public partial class Planet : Node3D
                 continue;
             }
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _material, Visible = false };
-            mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            mi.CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Terrain);
             AddChild(mi);
             Vegetation.Attach(mi, item.data);
             item.node.Mesh = mi;
@@ -117,6 +149,12 @@ public partial class Planet : Node3D
         // (ciel, brouillard et physique de Godot supposent Y = haut).
         Basis = Camera.WorldRotation;
         double h = Math.Max(0, cam.Length() - Geo.Radius);
+        // Lumières des villes : une case Black Marble fait ~5 km. Près du sol elle ferait un halo
+        // uniforme sur tout le quartier ; on l'atténue (les fenêtres des bâtiments prennent le relais).
+        _material.SetShaderParameter("sun_dir", SunDirWorld);
+        _material.SetShaderParameter("planet_center", Basis * (-cam).ToVector3());
+        _material.SetShaderParameter("planet_basis_inv", Basis.Inverse());
+        _material.SetShaderParameter("lights_strength", (float)Math.Clamp((h - 200) / 4000, 0.12, 1.0));
         _horizon = Math.Sqrt(h * (2 * Geo.Radius + h)) + 340_000; // + horizon d'un sommet de 9 km
         foreach (var r in _roots) Update(r, cam);
     }

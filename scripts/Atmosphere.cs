@@ -86,6 +86,7 @@ public partial class Atmosphere : Node3D
             mat.SetShaderParameter("noise_tex", _noise);
             mat.SetShaderParameter("period", (float)Period / (i == 2 ? 0.5f : 1f));
             var plane = new PlaneMesh { Size = new Vector2(160_000, 160_000), SubdivideWidth = 48, SubdivideDepth = 48 };
+            _planes[i] = plane;
             var mi = new MeshInstance3D { Mesh = plane, MaterialOverride = mat, ExtraCullMargin = 2000, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             AddChild(mi);
             _layers[i] = new CloudLayer { Mesh = mi, Mat = mat };
@@ -94,12 +95,32 @@ public partial class Atmosphere : Node3D
         // Couche mondiale (vue de l'espace) : sphère enfant de la planète, texturée avec la couverture GFS
         _globalMat = new ShaderMaterial { Shader = new Shader { Code = GlobalShader } };
         _globalMat.SetShaderParameter("noise_tex", _noise);
-        var sphere = new SphereMesh { Radius = (float)(Geo.Radius + 6000), Height = (float)(2 * (Geo.Radius + 6000)), RadialSegments = 192, Rings = 96 };
+        var sphere = _globalSphere = new SphereMesh { Radius = (float)(Geo.Radius + 6000), Height = (float)(2 * (Geo.Radius + 6000)), RadialSegments = 192, Rings = 96 };
         _globalClouds = new MeshInstance3D { Mesh = sphere, MaterialOverride = _globalMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
         Planet.AddChild(_globalClouds);
 
         _rain = MakePrecip(false);
         _snow = MakePrecip(true);
+        ApplyQuality(GraphicsQuality.Current, null);
+        GraphicsQuality.Changed += ApplyQuality;
+    }
+
+    public override void _ExitTree() => GraphicsQuality.Changed -= ApplyQuality;
+
+    readonly PlaneMesh[] _planes = new PlaneMesh[3];
+    SphereMesh _globalSphere;
+
+    /// <summary>Finesse des nuages et nombre de gouttes / flocons selon le niveau de qualité graphique.</summary>
+    void ApplyQuality(QualityProfile q, QualityProfile old)
+    {
+        foreach (var p in _planes) { p.SubdivideWidth = q.CloudSubdivisions; p.SubdivideDepth = q.CloudSubdivisions; }
+        _globalSphere.RadialSegments = q.GlobalCloudSegments;
+        _globalSphere.Rings = q.GlobalCloudSegments / 2;
+        if (old == null || old.PrecipitationFactor != q.PrecipitationFactor)
+        {
+            _rain.Amount = Math.Max(200, (int)(8000 * q.PrecipitationFactor));
+            _snow.Amount = Math.Max(200, (int)(6000 * q.PrecipitationFactor));
+        }
     }
 
     GpuParticles3D MakePrecip(bool snow)

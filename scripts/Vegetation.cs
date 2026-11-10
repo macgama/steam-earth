@@ -12,7 +12,8 @@ namespace SteamEarth;
 /// </summary>
 public static class Vegetation
 {
-    public const double MaxSpacing = 21;  // niveaux 14 (≈ 20 m) et 15 (≈ 10 m)
+    /// <summary>Chunks qui reçoivent des arbres : 21 = niveaux 14 (≈ 20 m) et 15 (≈ 10 m) ; dépend du niveau de qualité.</summary>
+    public static double MaxSpacing => GraphicsQuality.Current.VegetationMaxSpacing;
     /// <summary>Nombre d'arbres et buissons actuellement affichés (ou prêts à l'être).</summary>
     public static int Instances { get; private set; }
     const double TreeStep = 7.5;          // un emplacement d'arbre tous les ~7,5 m (≈ 180 arbres/ha au plus)
@@ -33,6 +34,8 @@ public static class Vegetation
         var broad = new List<Transform3D>(); var broadT = new List<Color>();
         var bushes = new List<Transform3D>(); var bushT = new List<Color>();
 
+        var quality = GraphicsQuality.Current; // lu une fois : stable pendant toute la construction
+        float density = quality.VegetationDensity;
         double step = size / res;
         // Grille d'emplacements alignée sur une grille mondiale fixe : un chunk et ses enfants
         // ont exactement les mêmes arbres.
@@ -69,8 +72,10 @@ public static class Vegetation
 
             // Chunks de niveau 14 (plus loin) : un sous-ensemble fixe des arbres du niveau 15, un peu plus gros,
             // pour limiter le nombre de polygones (les mêmes arbres restent en place quand on s'approche).
-            float keep = spacing > 15 ? 0.35f : 1f;
-            if (Rand(ref seed) > keep) continue;
+            // Chunks encore plus lointains (Ultra, niveau 13 ≈ 40 m) : sous-ensemble encore plus réduit, arbres plus gros.
+            // La densité du niveau de qualité retire des arbres partout (toujours les mêmes : tirage déterministe).
+            float keep = spacing > 30 ? 0.12f : spacing > 15 ? 0.35f : 1f;
+            if (Rand(ref seed) > keep * density) continue;
             List<Transform3D> list; List<Color> tints; float height; Color tint;
             if (LandCover.IsForest(cover))
             {
@@ -104,7 +109,7 @@ public static class Vegetation
             float a = Rand(ref seed) * Mathf.Tau;
             var xr = x * Mathf.Cos(a) + z * Mathf.Sin(a);
             var zr = xr.Cross(up);
-            float wide = height * (0.85f + Rand(ref seed) * 0.3f) * (keep < 1 ? 1.3f : 1f);
+            float wide = height * (0.85f + Rand(ref seed) * 0.3f) * (keep < 0.2f ? 1.6f : keep < 1 ? 1.3f : 1f);
             var basis = new Basis(xr * wide, up * height, zr * wide);
             var pos = dir * (Geo.Radius + h - 0.3) - center; // enfoncé de 30 cm : pas de pied flottant en pente
             list.Add(new Transform3D(basis, pos.ToVector3()));
@@ -208,7 +213,7 @@ public static class Vegetation
             mm.SetInstanceTransform(i, xf[i]);
             mm.SetInstanceColor(i, tints[i]);
         }
-        var mmi = new MultiMeshInstance3D { Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+        var mmi = new MultiMeshInstance3D { Multimesh = mm, CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Trees) };
         int n = xf.Length;
         Instances += n;
         mmi.TreeExiting += () => Instances -= n;

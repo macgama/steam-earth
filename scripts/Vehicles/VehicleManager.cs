@@ -38,6 +38,7 @@ public partial class VehicleManager : CanvasLayer
         GetParent().CallDeferred(Node.MethodName.AddChild, _world);
 
         Vehicle.Wind = WindAt;
+        GraphicsQuality.Changed += (_, _) => { foreach (var v in _vehicles) ApplyQuality(v); };
 
         _panel = new PanelContainer { Visible = false };
         _panel.SetAnchorsPreset(Control.LayoutPreset.Center);
@@ -129,6 +130,7 @@ public partial class VehicleManager : CanvasLayer
     /// <summary>Fait apparaître un véhicule devant le joueur et le fait monter dedans.</summary>
     public Vehicle Spawn(VehicleKind kind)
     {
+        if (Camera.Ride != null) { Message("Descends d'abord du train ou du bus (H)", 2.5); return null; }
         Vec3d basePos; double yaw;
         bool flying = false;
         if (Camera.Vehicle != null)
@@ -180,6 +182,7 @@ public partial class VehicleManager : CanvasLayer
         }
 
         _world.AddChild(v);
+        ApplyQuality(v);
         _vehicles.Add(v);
         // On garde au plus MaxVehicles véhicules : le plus ancien (garé) disparaît
         for (int i = 0; _vehicles.Count > MaxVehicles && i < _vehicles.Count; i++)
@@ -227,6 +230,13 @@ public partial class VehicleManager : CanvasLayer
         return null;
     }
 
+    /// <summary>Ombres des véhicules selon le niveau graphique (Bas : aucune).</summary>
+    static void ApplyQuality(Node n)
+    {
+        if (n is GeometryInstance3D g) g.CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Vehicles);
+        foreach (var c in n.GetChildren()) ApplyQuality(c);
+    }
+
     Vec3d WindAt(Vec3d p, double heightAboveGround)
     {
         if (Weather == null || !Weather.HasData || Atmosphere == null) return new Vec3d(0, 0, 0);
@@ -268,7 +278,7 @@ public partial class VehicleManager : CanvasLayer
                 var f = v.Fwd; var r = v.Right;
                 double alt = v.PosD.Length() - Geo.Radius;
                 var ring = new[] { v.PosD + f * hl + r * hw, v.PosD + f * hl - r * hw, v.PosD - f * hl - r * hw, v.PosD - f * hl + r * hw };
-                Obstacles.Set(v, new[] { Obstacles.Shape.Polygon(ring, alt - 0.3, alt + height) });
+                Obstacles.Set(v, new[] { Obstacles.Shape.Polygon(ring, null, alt - 0.3, alt + height) });
                 _registered[v] = v.PosD;
             }
         }
