@@ -344,6 +344,7 @@ public partial class BuildingsLayer : Node3D
             Planet.AddChild(t.Mesh);
         }
         t.Mesh.Mesh = mesh;
+        Obstacles.Set(t.Mesh, data.Footprints);
         t.Ready = true;
     }
 

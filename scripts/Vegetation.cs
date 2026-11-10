@@ -109,6 +109,7 @@ public static class Vegetation
             var pos = dir * (Geo.Radius + h - 0.3) - center; // enfoncé de 30 cm : pas de pied flottant en pente
             list.Add(new Transform3D(basis, pos.ToVector3()));
         }
+        data.VegetationCollides = spacing <= 15;
         data.Conifers = conifers.ToArray(); data.ConiferTints = conT.ToArray();
         data.Broadleaves = broad.ToArray(); data.BroadleafTints = broadT.ToArray();
         data.Bushes = bushes.ToArray(); data.BushTints = bushT.ToArray();
@@ -167,11 +168,29 @@ public static class Vegetation
     {
         foreach (var child in chunk.GetChildren())
             if (child is MultiMeshInstance3D) child.QueueFree();
-        if (data.Conifers == null) return;
+        if (data.Conifers == null) { Obstacles.Set(chunk, null); return; }
         InitMeshes();
         Add(chunk, _conifer, data.Conifers, data.ConiferTints);
         Add(chunk, _broadleaf, data.Broadleaves, data.BroadleafTints);
         Add(chunk, _bush, data.Bushes, data.BushTints);
+        if (!data.VegetationCollides) { Obstacles.Set(chunk, null); return; }
+        // Collisions : troncs (et buissons), seulement pour les chunks proches du joueur
+        var shapes = new List<Obstacles.Shape>(data.Conifers.Length + data.Broadleaves.Length + data.Bushes.Length);
+        AddShapes(shapes, data, data.Conifers, 0.035f);
+        AddShapes(shapes, data, data.Broadleaves, 0.045f);
+        AddShapes(shapes, data, data.Bushes, 0.35f);
+        Obstacles.Set(chunk, shapes);
+    }
+
+    static void AddShapes(List<Obstacles.Shape> shapes, ChunkData data, Transform3D[] xf, float trunkRatio)
+    {
+        foreach (var t in xf)
+        {
+            var foot = data.Center + new Vec3d(t.Origin.X, t.Origin.Y, t.Origin.Z);
+            double baseAlt = foot.Length() - Geo.Radius;
+            double h = t.Basis.Column1.Length(), wide = t.Basis.Column0.Length();
+            shapes.Add(Obstacles.Shape.Circle(foot, Math.Max(0.15, wide * trunkRatio), baseAlt, baseAlt + h));
+        }
     }
 
     static void Add(MeshInstance3D chunk, Mesh mesh, Transform3D[] xf, Color[] tints)

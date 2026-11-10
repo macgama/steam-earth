@@ -82,8 +82,17 @@ champs, zones bâties, roche/désert, glaciers et neiges éternelles, zones humi
 |---|---|---|
 | ![](docs/sols-foret.jpg) | ![](docs/sols-forets-champs.jpg) | ![](docs/sols-glacier.jpg) |
 
-Limites actuelles : pas de collision avec les arbres ; les routes apparaissent comme zones bâties (grises) dans
+Limites actuelles : les routes apparaissent comme zones bâties (grises) dans
 WorldCover ; la neige saisonnière n'est pas encore simulée (seuls glaciers et neiges éternelles sont blancs).
+
+## Collisions avec les décors
+
+`Obstacles.cs` : le personnage (mode marche) ne traverse plus les troncs d'arbres, les buissons ni les murs des
+bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle ou contour) avec une altitude de bas et
+de haut, rangée dans une grille d'environ 200 m et rattachée au nœud qui l'affiche (chunk d'arbres proche, tuile de
+bâtiments) : caché = ignoré, supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser
+quand les images sont lentes. Test : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,400 --walktest=120`
+(Berne, marche vers le nord jusqu'à un mur). Limites : cours intérieures pleines, pas encore de marche sur les toits.
 
 ## Météo et heure réelles
 

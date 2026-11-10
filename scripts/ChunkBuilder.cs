@@ -18,6 +18,7 @@ public sealed class ChunkData
     // Végétation (chunks les plus fins seulement) : transformations relatives au centre du chunk
     public Transform3D[] Conifers, Broadleaves, Bushes;
     public Color[] ConiferTints, BroadleafTints, BushTints;
+    public bool VegetationCollides; // chunks proches (≤ 15 m) : troncs solides pour le personnage
 }
 
 /// <summary>
