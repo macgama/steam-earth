@@ -83,6 +83,7 @@ public partial class VehicleManager : CanvasLayer
 
     public void Message(string text, double seconds = 4)
     {
+        GD.Print($"[Véhicules] {text}");
         _message.Text = text;
         _message.Visible = true;
         _messageTime = seconds;

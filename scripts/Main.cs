@@ -156,6 +156,7 @@ public partial class Main : Node3D
         var key = new InputEventKey { PhysicalKeycode = Key.Key1 + (view - 1), Pressed = true };
         _camera._UnhandledInput(key);
         if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
+        if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--fly") >= 0) walk = false; // tests de véhicules : rester en vol libre (avion en vol)
         if (walk) _camera.SetWalk(true);
         if (_spawnVehicle != null) CallDeferred(MethodName.SpawnTestVehicle);
         if (pitch is double pd) _camera.Pitch = pd * Math.PI / 180; // inclinaison de la caméra (tests)
