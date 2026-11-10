@@ -12,6 +12,7 @@ public sealed class RoadMeshData
     public Vec3d Origin;            // origine des sommets (repère planète)
     public Vector3[] Vertices, Normals;
     public Color[] Colors;
+    public Vector2[] UVs, UV2s;     // UV = (fraction de largeur, distance le long en m) ; UV2.x = largeur (m)
     public int[] Indices;           // null pour des lignes (Vertices par paires)
     /// <summary>Tuiles de zoom 12 : un groupe de lignes par sous-tuile de zoom 14 (4×4), pour masquer
     /// celles déjà couvertes par des tuiles détaillées.</summary>
@@ -33,11 +34,14 @@ public static class RoadBuilder
     public static readonly HashSet<string> Keys = new() { "subtype", "class", "road_flags", "level_rules", "width_rules" };
 
     /// <summary>Largeur (m), couleur (sRGB), priorité d'affichage (les grandes routes passent dessus).</summary>
-    readonly record struct Style(float Width, Color Color, int Priority, bool Rail = false);
+    readonly record struct Style(float Width, Color Color, int Priority, Surface Kind, bool Rail = false);
 
-    static readonly Color Asphalt = new(0.30f, 0.30f, 0.32f), AsphaltLight = new(0.40f, 0.40f, 0.41f);
+    /// <summary>Revêtement dessiné par le shader (stocké dans l'alpha de la couleur de sommet).</summary>
+    public enum Surface { MarkedAsphalt = 0, Asphalt = 1, Paved = 2, Gravel = 3, Dirt = 4, Ballast = 5, Steel = 6 }
+
+    static readonly Color Asphalt = new(0.40f, 0.40f, 0.42f), AsphaltLight = new(0.48f, 0.48f, 0.49f);
     static readonly Color Gravel = new(0.62f, 0.56f, 0.45f), Dirt = new(0.55f, 0.45f, 0.32f);
-    static readonly Color Paved = new(0.60f, 0.58f, 0.55f), Ballast = new(0.40f, 0.37f, 0.34f);
+    static readonly Color Paved = new(0.60f, 0.58f, 0.55f), Ballast = new(0.64f, 0.60f, 0.54f);
 
     static Style? StyleFor(string subtype, string cls)
     {
@@ -45,27 +49,27 @@ public static class RoadBuilder
             return cls switch
             {
                 "subway" => null, // presque toujours en souterrain
-                "tram" => new Style(2.0f, Ballast, 8, true),
-                "light_rail" or "funicular" or "monorail" => new Style(2.4f, Ballast, 7, true),
-                "narrow_gauge" => new Style(2.8f, Ballast, 7, true),
-                _ => new Style(3.4f, Ballast, 7, true),
+                "tram" => new Style(2.2f, AsphaltLight, 8, Surface.Asphalt, true), // rails noyés dans la chaussée
+                "light_rail" or "funicular" or "monorail" => new Style(2.6f, Ballast, 7, Surface.Ballast, true),
+                "narrow_gauge" => new Style(3.0f, Ballast, 7, Surface.Ballast, true),
+                _ => new Style(3.6f, Ballast, 7, Surface.Ballast, true),
             };
         if (subtype != "road") return null; // « water » = lignes de ferry
         return cls switch
         {
-            "motorway" => new Style(9f, Asphalt, 6),
-            "trunk" => new Style(8f, Asphalt, 6),
-            "primary" => new Style(7f, Asphalt, 5),
-            "secondary" => new Style(6.5f, Asphalt, 4),
-            "tertiary" => new Style(6f, Asphalt, 3),
-            "residential" or "unclassified" or "living_street" => new Style(5f, AsphaltLight, 2),
-            "service" => new Style(3.5f, AsphaltLight, 1),
-            "pedestrian" => new Style(4f, Paved, 1),
-            "track" => new Style(3f, Gravel, 1),
-            "steps" => new Style(1.8f, Paved, 0),
-            "footway" or "sidewalk" or "crosswalk" or "cycleway" => new Style(1.8f, Paved, 0),
-            "path" or "bridleway" => new Style(1.4f, Dirt, 0),
-            _ => new Style(4f, AsphaltLight, 1),
+            "motorway" => new Style(9f, Asphalt, 6, Surface.MarkedAsphalt),
+            "trunk" => new Style(8f, Asphalt, 6, Surface.MarkedAsphalt),
+            "primary" => new Style(7f, Asphalt, 5, Surface.MarkedAsphalt),
+            "secondary" => new Style(6.5f, Asphalt, 4, Surface.MarkedAsphalt),
+            "tertiary" => new Style(6f, Asphalt, 3, Surface.MarkedAsphalt),
+            "residential" or "unclassified" or "living_street" => new Style(5f, AsphaltLight, 2, Surface.Asphalt),
+            "service" => new Style(3.5f, AsphaltLight, 1, Surface.Asphalt),
+            "pedestrian" => new Style(4f, Paved, 1, Surface.Paved),
+            "track" => new Style(3f, Gravel, 1, Surface.Gravel),
+            "steps" => new Style(1.8f, Paved, 0, Surface.Paved),
+            "footway" or "sidewalk" or "crosswalk" or "cycleway" => new Style(1.8f, Paved, 0, Surface.Paved),
+            "path" or "bridleway" => new Style(1.4f, Dirt, 0, Surface.Dirt),
+            _ => new Style(4f, AsphaltLight, 1, Surface.Asphalt),
         };
     }
 
@@ -147,6 +151,8 @@ public static class RoadBuilder
         var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color>(); var idx = new List<int>();
+        var uvs = new List<Vector2>(); var uv2s = new List<Vector2>();
+        var g = new Geom(verts, norms, cols, uvs, uv2s, idx);
         var tunnels = new List<Range>(); var bridges = new List<Range>();
         bool incomplete = false;
 
@@ -178,22 +184,26 @@ public static class RoadBuilder
                 float lift = Lift + style.Priority * 0.04f;
                 foreach (var run in line)
                 {
+                    Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
                     if (style.Rail)
                     {
-                        Ribbon(run, data.Origin, -width / 2, width / 2, lift, Shade(style.Color, 1), verts, norms, cols, idx);
-                        var steel = new Color(0.55f, 0.55f, 0.58f);
-                        float g = width > 3 ? 0.72f : 0.5f; // demi-écartement (voie normale / métrique)
-                        Ribbon(run, data.Origin, -g - 0.07f, -g + 0.07f, lift + 0.16f, steel, verts, norms, cols, idx);
-                        Ribbon(run, data.Origin, g - 0.07f, g + 0.07f, lift + 0.16f, steel, verts, norms, cols, idx);
+                        // deux rails en acier, un peu surélevés (sur les traverses)
+                        var steel = new Color(0.62f, 0.62f, 0.65f);
+                        float gauge = width > 3.3f ? 0.72f : 0.5f; // demi-écartement (voie normale / métrique)
+                        float top = lift + (style.Kind == Surface.Ballast ? 0.18f : 0.03f);
+                        Ribbon(run, data.Origin, -gauge - 0.08f, -gauge + 0.08f, top, steel, Surface.Steel, g);
+                        Ribbon(run, data.Origin, gauge - 0.08f, gauge + 0.08f, top, steel, Surface.Steel, g);
                     }
-                    else Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, verts, norms, cols, idx);
                 }
             }
         }
         data.Vertices = verts.ToArray(); data.Normals = norms.ToArray(); data.Colors = cols.ToArray(); data.Indices = idx.ToArray();
+        data.UVs = uvs.ToArray(); data.UV2s = uv2s.ToArray();
         data.Incomplete = incomplete;
         return data;
     }
+
+    readonly record struct Geom(List<Vector3> Verts, List<Vector3> Norms, List<Color> Cols, List<Vector2> Uvs, List<Vector2> Uv2s, List<int> Idx);
 
     static bool InTile(double fx, double fy) => fx > 0.0005 && fx < 0.9995 && fy > 0.0005 && fy < 0.9995;
 
@@ -260,10 +270,13 @@ public static class RoadBuilder
         return runs;
     }
 
-    static void Ribbon(List<(Vec3d dir, double h)> run, Vec3d origin, float left, float right, float lift, Color col,
-        List<Vector3> verts, List<Vector3> norms, List<Color> cols, List<int> idx)
+    static void Ribbon(List<(Vec3d dir, double h)> run, Vec3d origin, float left, float right, float lift, Color col, Surface kind, Geom g)
     {
+        var (verts, norms, cols, uvs, uv2s, idx) = (g.Verts, g.Norms, g.Cols, g.Uvs, g.Uv2s, g.Idx);
         int n = run.Count, start = verts.Count;
+        col.A = (float)kind / 10f;
+        var uv2 = new Vector2(right - left, 0);
+        double along = 0;
         for (int i = 0; i < n; i++)
         {
             var up = run[i].dir;
@@ -276,6 +289,9 @@ public static class RoadBuilder
             verts.Add((center + side * right - origin).ToVector3());
             norms.Add(nrm); norms.Add(nrm);
             cols.Add(col); cols.Add(col);
+            if (i > 0) along += (run[i].dir - run[i - 1].dir).Length() * Geo.Radius;
+            uvs.Add(new Vector2(0, (float)along)); uvs.Add(new Vector2(1, (float)along));
+            uv2s.Add(uv2); uv2s.Add(uv2);
         }
         for (int i = 0; i < n - 1; i++)
         {
@@ -306,7 +322,7 @@ public static class RoadBuilder
                 var tunnels = new List<Range>(); var bridges = new List<Range>();
                 ParseRules(f, out bool under, tunnels, bridges, out _);
                 if (under) continue;
-                col = st.Value.Rail ? new Color(0.45f, 0.40f, 0.38f) : st.Value.Priority >= 3 ? new Color(0.78f, 0.74f, 0.64f) : new Color(0.62f, 0.60f, 0.56f);
+                col = st.Value.Rail ? new Color(0.50f, 0.30f, 0.24f) : st.Value.Priority >= 3 ? new Color(0.78f, 0.74f, 0.64f) : new Color(0.62f, 0.60f, 0.56f);
             }
             foreach (var part in f.Parts)
             {
