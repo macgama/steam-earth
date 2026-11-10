@@ -196,6 +196,7 @@ public partial class Main : Node3D
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
         double solarH = ((utc.TimeOfDay.TotalHours + camLon / 15) % 24 + 24) % 24;
         var local = TimeZones.LocalTime(utc, camLat, camLon, out string zone, out TimeSpan offset, out bool dst);
+        _buildings.LocalHour = local.TimeOfDay.TotalHours;
         string precip = w.PrecipMmH < 0.1 ? "pas de précipitations" : $"{(w.FrozenFraction > 0.5 || w.TemperatureC < 0.5 ? "neige" : "pluie")} {w.PrecipMmH:F1} mm/h";
 
         Geo.ToLatLon(player.Normalized(), out double lat, out double lon);
