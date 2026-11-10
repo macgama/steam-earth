@@ -89,11 +89,26 @@ WorldCover ; la neige saisonnière n'est pas encore simulée (seuls glaciers et 
 ## Collisions avec les décors
 
 `Obstacles.cs` : le personnage (mode marche) ne traverse plus les troncs d'arbres, les buissons ni les murs des
-bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle ou contour) avec une altitude de bas et
-de haut, rangée dans une grille d'environ 200 m et rattachée au nœud qui l'affiche (chunk d'arbres proche, tuile de
-bâtiments) : caché = ignoré, supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser
-quand les images sont lentes. Test : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,400 --walktest=120`
-(Berne, marche vers le nord jusqu'à un mur). Limites : cours intérieures pleines, pas encore de marche sur les toits.
+bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle, ou contour avec ses **cours
+intérieures**, qui restent praticables) avec une altitude de base et un toit. Les obstacles sont rangés dans une grille
+d'environ 200 m et rattachés au nœud qui les affiche (chunk d'arbres proche, tuile de bâtiments) : caché = ignoré,
+supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser quand les images sont lentes.
+
+- **Toits** : plats ou à pans (même pente que le maillage), on y marche comme sur le sol et on tombe en passant le bord.
+- **Escalade** : tenir **Espace** contre un mur (ou un tronc) fait grimper à 2,5 m/s jusqu'au toit. C'est aussi le
+  moyen d'entrer dans une cour fermée : monter, traverser le toit, redescendre.
+- **Caméra** : en vue arrière elle se rapproche pour ne pas passer derrière un mur ; en vol libre elle se pose sur les
+  toits et ne traverse plus les murs.
+- Tests : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,300 --walktest=200` (Berne, marche vers un mur) ;
+  ajouter `--climb` pour escalader (le personnage monte à 12 m, traverse le toit et redescend de l'autre côté).
+
+## Lumières des villes
+
+La nuit, les villes s'allument d'après l'image **NASA Black Marble 2016** (satellite Suomi NPP, capteur VIIRS).
+Les images de la NASA ne sont pas soumises au droit d'auteur : usage commercial autorisé, avec mention de la source
+et sans laisser croire à un soutien de la NASA. Le shader du terrain (`shaders/terrain.gdshader`) lit la carte par pixel
+et ne l'allume que du côté nuit de la planète ; près du sol, la lueur est atténuée et les fenêtres des bâtiments prennent le relais.
+La carte est régénérée par le workflow « Lumières des villes » (`tools/nightlights/build_nightlights.py`).
 
 ## Météo et heure réelles
 
@@ -265,6 +280,7 @@ textures de façades.
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Relief Suisse (streaming) | swissALTI3D © swisstopo (données ouvertes OGD, usage commercial autorisé avec mention de la source) | 0,5 m |
+| `data/nightlights/nightlights.bin.gz` | NASA Earth Observatory, Black Marble 2016 (Suomi NPP VIIRS), domaine public | ~5 km |
 | `data/swissalti3d_index.bin` | index des tuiles swissALTI3D (API STAC de data.geo.admin.ch), `tools/swissalti3d/build_index.py` | 1 km |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
