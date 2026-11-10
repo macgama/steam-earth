@@ -35,6 +35,9 @@ public partial class Main : Node3D
 
         _camera = new FlyCamera { Name = "Camera" };
         AddChild(_camera);
+        // Personnage du mode marche (F), placé chaque image par la caméra
+        _camera.Body = new Character { Name = "Character", Visible = false };
+        AddChild(_camera.Body);
 
         _planet = new Planet { Name = "Planet", Camera = _camera };
         AddChild(_planet);
@@ -79,12 +82,15 @@ public partial class Main : Node3D
 
         int view = 1;
         bool walk = false;
+        double? pitch = null;
         double[] at = null;
         foreach (var a in OS.GetCmdlineUserArgs())
         {
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
+            if (a == "--fp") _camera.ThirdPerson = false;           // marche à la première personne
+            if (a.StartsWith("--pitch=")) pitch = double.Parse(a.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
             if (a.StartsWith("--country=")) _gotoCountry = a.Substring(10);
             if (a == "--menu") _openMenu = true;
             if (a == "--autowalk") { walk = true; _camera.AutoForward = true; _minFrames = 600; }
@@ -99,6 +105,7 @@ public partial class Main : Node3D
         _camera._UnhandledInput(key);
         if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
         if (walk) _camera.SetWalk(true);
+        if (pitch is double pd) _camera.Pitch = pd * Math.PI / 180; // inclinaison de la caméra (tests)
         if (_gotoCountry != null)
         {
             var c = Geography.Countries.Find(x => x.Name == _gotoCountry);
@@ -110,7 +117,9 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         _frames++;
-        double alt = _camera.Altitude;
+        var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
+        double alt = player.Length() - Geo.Radius;
+        double ground = _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
         var w = _atmosphere.Current;
         var utc = _atmosphere.GameUtc;
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
@@ -118,16 +127,16 @@ public partial class Main : Node3D
         var local = TimeZones.LocalTime(utc, camLat, camLon, out string zone, out TimeSpan offset, out bool dst);
         string precip = w.PrecipMmH < 0.1 ? "pas de précipitations" : $"{(w.FrozenFraction > 0.5 || w.TemperatureC < 0.5 ? "neige" : "pluie")} {w.PrecipMmH:F1} mm/h";
 
-        Geo.ToLatLon(_camera.PosD.Normalized(), out double lat, out double lon);
+        Geo.ToLatLon(player.Normalized(), out double lat, out double lon);
         _hud.Text =
             $"Lat {lat:F4}°  Lon {lon:F4}°\n" +
-            $"Altitude {alt:N0} m   Sol {_camera.GroundHeight:N0} m   Hauteur {alt - _camera.GroundHeight:N0} m\n" +
-            $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? (_camera.Grounded ? "[MARCHE]" : "[MARCHE, en l'air]") : "")}\n" +
+            $"Altitude {alt:N0} m   Sol {ground:N0} m   Hauteur {alt - ground:N0} m\n" +
+            $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? $"[MARCHE{(_camera.Grounded ? "" : ", en l'air")}, {(_camera.ThirdPerson ? "vue arrière" : "1re personne")}]" : "")}\n" +
             $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   tuiles 30 m chargées {HeightProvider.LoadedTiles}/{HeightProvider.AvailableTiles}\n" +
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court)  1-9 lieux  +/− heure  R heure réelle  Tab pays  B frontières";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  Tab pays  B frontières";
 
         if (_shotPath != null)
         {
