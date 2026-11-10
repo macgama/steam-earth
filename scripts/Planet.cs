@@ -56,6 +56,8 @@ public partial class Planet : Node3D
     public override void _Ready()
     {
         _material = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
+        var lights = NightLights.CreateTexture();
+        if (lights != null) _material.SetShaderParameter("city_lights", lights);
         _roots = new QuadNode[6];
         for (int f = 0; f < 6; f++) _roots[f] = MakeNode(f, 0, -1, -1, 2);
     }
@@ -84,7 +86,6 @@ public partial class Planet : Node3D
             arrays[(int)Mesh.ArrayType.Vertex] = item.data.Vertices;
             arrays[(int)Mesh.ArrayType.Normal] = item.data.Normals;
             arrays[(int)Mesh.ArrayType.Color] = item.data.Colors;
-            arrays[(int)Mesh.ArrayType.TexUV2] = item.data.Lights;
             arrays[(int)Mesh.ArrayType.Index] = item.data.Indices;
             var mesh = new ArrayMesh();
             mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -120,6 +121,7 @@ public partial class Planet : Node3D
         // uniforme sur tout le quartier ; on l'atténue (les fenêtres des bâtiments prennent le relais).
         _material.SetShaderParameter("sun_dir", SunDirWorld);
         _material.SetShaderParameter("planet_center", Basis * (-cam).ToVector3());
+        _material.SetShaderParameter("planet_basis_inv", Basis.Inverse());
         _material.SetShaderParameter("lights_strength", (float)Math.Clamp((h - 200) / 4000, 0.12, 1.0));
         _horizon = Math.Sqrt(h * (2 * Geo.Radius + h)) + 340_000; // + horizon d'un sommet de 9 km
         foreach (var r in _roots) Update(r, cam);

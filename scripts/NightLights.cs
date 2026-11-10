@@ -37,6 +37,15 @@ public static class NightLights
         catch (Exception e) { GD.PrintErr("[NightLights] " + e.Message); _grid = null; }
     }
 
+    /// <summary>Texture mondiale (avec mipmaps, pour rester lisse vue de l'espace) lue par le shader du terrain.</summary>
+    public static ImageTexture CreateTexture()
+    {
+        if (_grid == null) return null;
+        var img = Image.CreateFromData(_w, _h, false, Image.Format.L8, _grid);
+        img.GenerateMipmaps();
+        return ImageTexture.CreateFromImage(img);
+    }
+
     /// <summary>Intensité lumineuse 0..1 (interpolation bilinéaire).</summary>
     public static float Sample(double lat, double lon)
     {

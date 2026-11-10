@@ -10,7 +10,6 @@ public sealed class ChunkData
     public Vector3[] Vertices;
     public Vector3[] Normals;
     public Color[] Colors;
-    public Vector2[] Lights;  // UV2.x = lumières nocturnes des villes (0..1)
     public int[] Indices;
     public Vec3d Center; // centre du chunk dans le repère planète (double), au niveau de la mer
     public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
@@ -64,7 +63,6 @@ public static class ChunkBuilder
         var verts = new Vector3[n * n + border];
         var norms = new Vector3[n * n + border];
         var cols = new Color[n * n + border];
-        var lights = new Vector2[n * n + border];
 
         for (int j = 0; j < n; j++)
         for (int i = 0; i < n; i++)
@@ -79,7 +77,6 @@ public static class ChunkBuilder
             norms[o] = nn.ToVector3();
             Geo.ToLatLon(dirs[k], out double lat, out double lon);
             cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing);
-            if (!wat[k] || hgt[k] > 0.5f) lights[o] = new Vector2(NightLights.Sample(lat, lon), 0); // pas de halo sur la mer
         }
 
         // Indices : on choisit l'ordre des sommets pour que la face avant regarde vers l'extérieur
@@ -116,7 +113,6 @@ public static class ChunkBuilder
             verts[sb + q] = verts[ring[q]] + down;
             norms[sb + q] = norms[ring[q]];
             cols[sb + q] = cols[ring[q]];
-            lights[sb + q] = lights[ring[q]];
         }
         for (int q = 0; q < border; q++)
         {
@@ -128,7 +124,7 @@ public static class ChunkBuilder
 
         double sum = 0;
         for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
-        var data = new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Lights = lights, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        var data = new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
         if (spacing <= Vegetation.MaxSpacing) Vegetation.Scatter(data, face, u0, v0, size, res, spacing, hgt, wat, s, center);
         return data;
     }
