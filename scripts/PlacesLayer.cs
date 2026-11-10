@@ -98,6 +98,14 @@ public partial class PlacesLayer : Node3D
         }
     }
 
+    /// <summary>Localités affichées, pour l'invite « on construit ? » (<see cref="BuildingsLayer"/>).</summary>
+    public void CollectTargets(List<BuildingsLayer.Target> list)
+    {
+        foreach (var p in _places.Values)
+            if (p.Label.Visible)
+                list.Add(new BuildingsLayer.Target(p.Name, p.Lat, p.Lon, BuildingsLayer.RadiusFor(p.Class, p.Population), p.Label));
+    }
+
     void Scan(Vec3d dir)
     {
         Geo.ToLatLon(dir, out double lat, out double lon);

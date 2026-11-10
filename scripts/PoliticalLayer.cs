@@ -21,6 +21,7 @@ public partial class PoliticalLayer : Node3D
     sealed class Cell { public Vec3d Origin; public MeshInstance3D Mesh; }
     readonly List<Cell> _cells = new();
     readonly List<(Vec3d pos, Label3D label)> _capitals = new();
+    readonly List<Country> _capitalCountries = new();
     ShaderMaterial _lineMat;
 
     public override void _Ready()
@@ -46,6 +47,7 @@ public partial class PoliticalLayer : Node3D
             };
             Planet.AddChild(label);
             _capitals.Add((pos, label));
+            _capitalCountries.Add(c);
         }
 
         // Frontières : construites en arrière-plan (échantillonnage du relief)
@@ -55,6 +57,17 @@ public partial class PoliticalLayer : Node3D
             var built = BuildBorderMeshes(borders);
             CallDeferred(nameof(AddBorderMeshes), built);
         });
+    }
+
+    /// <summary>Capitales affichées, pour l'invite « on construit ? » (<see cref="BuildingsLayer"/>).</summary>
+    public void CollectTargets(List<BuildingsLayer.Target> list)
+    {
+        for (int i = 0; i < _capitals.Count; i++)
+        {
+            var c = _capitalCountries[i];
+            if (_capitals[i].label.Visible)
+                list.Add(new BuildingsLayer.Target(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), _capitals[i].label));
+        }
     }
 
     /// <summary>Regroupe les lignes par cases de 10° et calcule les sommets posés sur le relief.</summary>

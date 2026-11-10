@@ -32,6 +32,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | B | afficher / masquer frontières et capitales |
 | T | afficher / masquer routes, chemins et voies ferrées |
 | N | afficher / masquer les noms des villes et villages |
+| Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -163,6 +164,42 @@ dans `user://cache/overture/`.
 Pour la version commerciale, il sera plus sûr de copier les deux archives sur un serveur à nous (ou un CDN) plutôt que
 de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 
+## Bâtiments des villes et villages, à la demande
+
+Les bâtiments réels ne sont construits que là où le joueur le demande :
+
+- en survolant le nom d'une ville ou d'un village (souris libre après Échap, ou viseur au centre de l'écran en vol),
+  l'invite **« Berne — on construit ? »** apparaît : **clic** (ou **K** en vol) pour construire, **Maj + clic / Maj + K**
+  pour démolir. Pendant la construction, l'invite montre l'avancement (tuiles, nombre de bâtiments) ;
+- choisir un pays dans le menu **Tab** construit aussi sa capitale.
+
+La zone construite est un disque autour du centre : ~350 m pour un hameau, 700 m pour un village, 1,5 km pour une
+petite ville, 4 km pour une capitale, 2 à 7 km pour une ville selon sa population, 8 km pour une mégapole.
+Les villes construites sont gardées dans `user://cities.json` et réapparaissent au lancement suivant (leurs tuiles ne
+sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
+
+- Source : **Overture Maps « buildings »** (`buildings.pmtiles`, même bucket AWS que les routes, 180 Go dont on ne lit
+  que les tuiles de zoom 14 utiles, ~0,2 à 1,4 Mo chacune). Contours OpenStreetMap complétés par Microsoft ML Buildings
+  (ODbL), Google Open Buildings (CC BY 4.0) et USGS Lidar (domaine public) : usage commercial autorisé avec mention.
+- `BuildingBuilder.cs` : murs extrudés depuis le contour (cours intérieures comprises), posés sur le relief (le plus bas
+  point du contour, fondations de 6 m sous le sol pour ne jamais flotter). Hauteur = `height` d'OSM, sinon nombre
+  d'étages × 3 m, sinon une valeur selon le type (maison, immeuble, église, industrie…) et la surface.
+  Toits : à deux pans, à quatre pans, en pavillon ou en appentis quand OSM le dit (ou par défaut pour les petites
+  maisons à peu près rectangulaires), sinon plats. Les « building parts » d'OSM (églises, tours…) remplacent le contour.
+  Couleurs de façade et de toit d'OSM quand elles existent, sinon selon le matériau ou le type.
+- `BuildingsLayer.cs` : invite, liste des villes, tuiles, et un shader qui dessine les fenêtres (étages de 3 m) et les
+  allume au hasard à la tombée de la nuit.
+
+Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
+
+| Berne, la vieille ville et la cathédrale | Lauterbrunnen |
+|---|---|
+| ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) |
+
+Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
+convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
+textures de façades.
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -178,6 +215,7 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
+| Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
 Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
