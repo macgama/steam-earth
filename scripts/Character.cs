@@ -22,6 +22,8 @@ public partial class Character : Node3D
 
     public const double Height = 1.8;
     public const double BodyRadius = 0.3;
+    public const double ClimbSpeed = 2.5;  // m/s en escaladant un mur (Espace contre le mur)
+    public bool Climbing { get; private set; }
     public const double JumpSpeed = 4.5;   // m/s → saut d'environ 1 m
     public const double Gravity = 9.81;
 
@@ -94,6 +96,7 @@ public partial class Character : Node3D
     {
         var up = PosD.Normalized();
         Speed = 0;
+        bool blocked = false;
         if (move.Length() > 1e-6)
         {
             var dir = move.Normalized();
@@ -104,7 +107,8 @@ public partial class Character : Node3D
             for (int k = 0; k < steps; k++)
             {
                 PosD += dir * (dist / steps);
-                PosD = Obstacles.Resolve(PosD, BodyRadius, Height);
+                PosD = Obstacles.Resolve(PosD, BodyRadius, Height, out bool b);
+                if (b) blocked = true;
             }
             Speed = speed;
             // Le corps se tourne progressivement vers la direction de marche
@@ -114,14 +118,19 @@ public partial class Character : Node3D
             Yaw += diff * Math.Min(1, dt * 12);
         }
 
-        if (jump && Grounded) { _verticalSpeed = JumpSpeed; Grounded = false; }
-        _verticalSpeed -= Gravity * dt;
+        // Escalade : Espace contre un mur (ou un tronc) pour monter, jusqu'au toit
+        Climbing = jump && blocked;
+        if (Climbing) { _verticalSpeed = ClimbSpeed; Grounded = false; }
+        else if (jump && Grounded) { _verticalSpeed = JumpSpeed; Grounded = false; }
+        if (!Climbing) _verticalSpeed -= Gravity * dt;
         PosD += PosD.Normalized() * (_verticalSpeed * dt);
 
         // Contrainte au sol (gravité radiale : « haut » = direction opposée au centre de la Terre)
         up = PosD.Normalized();
         Geo.ToLatLon(up, out double lat, out double lon);
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
+        // Toits : on s'y pose comme sur le sol (et on en tombe en passant le bord)
+        GroundHeight = Math.Max(GroundHeight, Obstacles.SurfaceBelow(PosD));
         double above = Altitude - GroundHeight;
         // On « colle » au sol dans les descentes plutôt que de décoller à chaque pas
         bool snap = Grounded && _verticalSpeed <= 0 && above < Math.Max(0.3, Speed * dt * 1.5);

@@ -135,7 +135,9 @@ public partial class Main : Node3D
             if (a == "--menu") _openMenu = true;
             if (a == "--autowalk") { walk = true; _camera.AutoForward = true; _minFrames = 600; }
             // --walktest=N : attend que le monde soit chargé, puis avance seul N images (test des collisions)
-            if (a.StartsWith("--walktest=")) { walk = true; _walkTest = int.Parse(a.Substring(11)); }
+            // (le personnage n'apparaît qu'une fois le monde chargé) ; --climb : en tenant Espace
+            if (a.StartsWith("--walktest=")) _walkTest = int.Parse(a.Substring(11));
+            if (a == "--climb") _camera.AutoJump = true;
             if (a.StartsWith("--at="))
             {
                 var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
@@ -195,9 +197,9 @@ public partial class Main : Node3D
             _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
             if (_walkTest > 0 && ((_frames > _minFrames && _idleFrames > 20) || _camera.AutoForward))
             {
-                _camera.AutoForward = true;
+                if (!_camera.AutoForward) { _camera.SetWalk(true); _camera.AutoForward = true; }
                 _walkTest--;
-                if (_walkTest % 10 == 0) GD.Print($"[Test] marche : {lat:F6} {lon:F6} obstacles {Obstacles.Count}");
+                if (_walkTest % 10 == 0) GD.Print($"[Test] marche : {lat:F6} {lon:F6} alt {alt:F1} sol {ground:F1} obstacles {Obstacles.Count}");
                 return;
             }
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000)

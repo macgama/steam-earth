@@ -225,10 +225,10 @@ public static class BuildingBuilder
         bool windows = height >= 4 && footprint >= 25 && cls is not ("garage" or "garages" or "shed" or "roof" or "carport" or "hut" or "silo" or "storage_tank" or "transformer_tower");
         var uv2 = new Vector2(windows ? 1 : 0, (float)seed);
 
-        // Collisions : contour extérieur (les cours intérieures sont pleines, pour l'instant)
-        var ring = new Vec3d[ext.Count];
-        for (int i = 0; i < ext.Count; i++) ring[i] = fr.C * R + fr.East * ext[i].X + fr.North * ext[i].Y;
-        m.Obs.Add(Obstacles.Shape.Polygon(ring, baseH, top));
+        // Collisions : contour extérieur et cours intérieures ; toit à pans réglé par PitchedRoof
+        Vec3d[][] holeRings = null;
+        if (holes.Count > 0) { holeRings = new Vec3d[holes.Count][]; for (int i = 0; i < holes.Count; i++) holeRings[i] = World(holes[i], fr); }
+        m.Obs.Add(Obstacles.Shape.Polygon(World(ext, fr), holeRings, baseH, top));
 
         Walls(ext, baseH, eave, gmin, wall, uv2, fr, m);
         foreach (var h in holes) Walls(h, baseH, eave, gmin, wall, uv2, fr, m);
@@ -236,6 +236,14 @@ public static class BuildingBuilder
         else FlatRoof(ext, holes, eave, roof, fr, m);
         return true;
     }
+
+    static Vec3d[] World(List<V2> pts, in Frame fr)
+    {
+        var w = new Vec3d[pts.Count];
+        for (int i = 0; i < pts.Count; i++) w[i] = fr.C * R + fr.East * pts[i].X + fr.North * pts[i].Y;
+        return w;
+    }
+    static Vec3d World(V2 p, in Frame fr) => fr.C * R + fr.East * p.X + fr.North * p.Y;
 
     static bool IsPitched(string s) => s is "gabled" or "hipped" or "half-hipped" or "side_hipped" or "gambrel" or "mansard" or "saltbox" or "pyramidal" or "skillion";
 
@@ -362,6 +370,8 @@ public static class BuildingBuilder
             r2 = new V2(mid2.X - ux * inset, mid2.Y - uy * inset);
         }
         if (shape == "skillion") { Skillion(A, B, C, D, low, ridge, col, wall, ground, fr, m); return; }
+        // Collisions : on peut marcher sur ce toit (même pente que le maillage)
+        if (m.Obs.Count > 0) m.Obs[^1].SetPitched(World(r1, fr), World(r2, fr), ridge, low, W / 2);
 
         var center = new V2((A.X + C.X) / 2, (A.Y + C.Y) / 2);
         Quad(A, low, B, low, r2, ridge, r1, ridge, col, center, fr, m, false);
