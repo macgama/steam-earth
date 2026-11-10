@@ -1,0 +1,8 @@
+.godot/
+.mono/
+bin/
+obj/
+*.user
+/android/
+export/
+__pycache__/
