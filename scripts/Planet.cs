@@ -96,11 +96,13 @@ public partial class Planet : Node3D
             {
                 // Reconstruction (données fines arrivées) : on remplace le maillage sur place.
                 item.node.Mesh.Mesh = mesh;
+                Vegetation.Attach(item.node.Mesh, item.data);
                 continue;
             }
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _material, Visible = false };
             mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             AddChild(mi);
+            Vegetation.Attach(mi, item.data);
             item.node.Mesh = mi;
             item.node.MeanHeight = item.data.MeanHeight;
             item.node.Ready = true;
