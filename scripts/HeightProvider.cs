@@ -10,6 +10,7 @@ namespace SteamEarth;
 
 /// <summary>
 /// Fournit l'altitude (m) en tout point du globe, au niveau de détail demandé.
+/// - Suisse : swissALTI3D à 0,5 m (swisstopo), téléchargé à la demande quand on est près du sol (voir SwissAlti3D).
 /// - Copernicus DEM GLO-30 (30 m, monde entier) et ESA WorldCover (eau et couverture des sols, 10 m) téléchargés à la demande
 ///   depuis AWS Open Data, par tuiles internes de COG, mis en cache sur disque (voir StreamedRaster).
 /// - Carte mondiale de base (équirectangulaire 4096×2048, ~10 km, avec bathymétrie).
@@ -68,6 +69,7 @@ public static class HeightProvider
             }
         }
         GD.Print($"[HeightProvider] base {_bw}x{_bh}, {Available.Count} tuiles de détail disponibles");
+        SwissAlti3D.Init();
     }
 
     static int Key(int lat, int lon) => (lat + 90) * 360 + (lon + 180);
@@ -150,6 +152,25 @@ public static class HeightProvider
             return hb;
         }
 
+        // 0. Zones haute définition (Suisse, 0,5 m) quand on est près du sol
+        if (spacing < SwissAlti3D.MaxSpacing && SwissAlti3D.Covers(latDeg, lonDeg))
+        {
+            int hl = spacing < 0.9 ? 0 : spacing < 1.8 ? 1 : spacing < 3.6 ? 2 : 3; // 0,5 / 1 / 2 / 4 m
+            var hr = SwissAlti3D.Raster.Sample(latDeg, lonDeg, hl, true, true, out float hv);
+            if (hr == StreamedRaster.Result.Pending)
+            {
+                pending = true;
+                for (int l = hl + 1; l <= 3 && hr != StreamedRaster.Result.Ok; l++)
+                    hr = SwissAlti3D.Raster.Sample(latDeg, lonDeg, l, true, false, out hv);
+            }
+            if (hr == StreamedRaster.Result.Ok)
+            {
+                water = WaterAt(latDeg, lonDeg, spacing, hv, hb, false, ref pending, out cover);
+                return hv;
+            }
+            // sinon (téléchargement en cours ou tuile absente) : Copernicus 30 m en attendant
+        }
+
         // 1. Tuiles locales (incluses dans le jeu) : disponibles hors ligne, sans attente
         float h = Sample(latDeg, lonDeg, true, out water, baseFallback: false, out bool local);
         if (local)
@@ -172,7 +193,14 @@ public static class HeightProvider
         h = res == StreamedRaster.Result.Ok ? v : hb;
         bool ocean = res == StreamedRaster.Result.Absent; // pas de tuile Copernicus = mer
 
-        // 3. Eau (lacs, rivières, mer) : WorldCover, aperçu adapté
+        water = WaterAt(latDeg, lonDeg, spacing, h, hb, ocean, ref pending, out cover);
+        return h;
+    }
+
+    /// <summary>Eau (lacs, rivières, mer) et couverture des sols : WorldCover, aperçu adapté à l'espacement.</summary>
+    static bool WaterAt(double latDeg, double lonDeg, double spacing, float h, float hb, bool ocean, ref bool pending, out byte cover)
+    {
+        bool water;
         int wl = LandCover.LevelFor(spacing);
         var wres = WorldCover.Sample(latDeg, lonDeg, wl, false, true, out float cls);
         if (wres == StreamedRaster.Result.Ok && !float.IsNaN(cls)) { cover = (byte)cls; water = cover == LandCover.Water; }
@@ -184,7 +212,7 @@ public static class HeightProvider
             cover = LandCover.Sample(latDeg, lonDeg, spacing, false, out _);
         }
         if (ocean) water = water || h <= 0;
-        return h;
+        return water;
     }
 
     /// <summary>Altitude en mètres. <paramref name="useDetail"/> : utiliser les tuiles 30 m locales si présentes.</summary>
@@ -236,9 +264,9 @@ public static class HeightProvider
     }
 
     /// <summary>Altitude de la surface praticable (l'eau compte comme surface).</summary>
-    /// <param name="spacing">précision voulue (m) : 10 sous les pieds du joueur ; plus grossier pour les objets
-    /// lointains (frontières…), afin de ne pas télécharger le 30 m de toute la planète.</param>
-    public static float SurfaceHeight(double latDeg, double lonDeg, double spacing = 10.0)
+    /// <param name="spacing">précision voulue (m) : 0,5 sous les pieds du joueur (le maillage le plus fin) ;
+    /// plus grossier pour les objets lointains (frontières…), afin de ne pas télécharger toute la planète.</param>
+    public static float SurfaceHeight(double latDeg, double lonDeg, double spacing = 0.5)
     {
         float h = Sample(latDeg, lonDeg, spacing, out bool water, out _);
         return water ? Math.Max(h, 0) : h;

@@ -97,7 +97,7 @@ public partial class CountryMenu : CanvasLayer
         Geo.LocalFrame(up, out _, out var north);
         var p = Camera.PosD - north * 1500;
         Geo.ToLatLon(p.Normalized(), out double lat, out double lon);
-        Camera.Teleport(lat, lon, 500 + HeightProvider.SurfaceHeight(c.Lat, c.Lon) - HeightProvider.SurfaceHeight(lat, lon), 0, -18);
+        Camera.Teleport(lat, lon, 500 + HeightProvider.SurfaceHeight(c.Lat, c.Lon, 30) - HeightProvider.SurfaceHeight(lat, lon, 30), 0, -18);
         GD.Print($"[CountryMenu] {c} → {c.Lat:F4}, {c.Lon:F4}");
         if (_panel.Visible) Toggle();
     }

@@ -94,7 +94,11 @@ public static class ChunkBuilder
         }
 
         // Jupes : contour du chunk, dupliqué et abaissé vers le centre de la Terre.
-        double skirt = size * Geo.Radius * 0.02 + 20.0;
+        // Leur hauteur suit le dénivelé du chunk : près d'une falaise, le voisin moins détaillé peut passer
+        // des dizaines de mètres plus bas (ex. parois de Lauterbrunnen en 0,5 m à côté du 30 m).
+        float hMin = float.MaxValue, hMax = float.MinValue;
+        for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) { float hv = hgt[j * s + i]; if (hv < hMin) hMin = hv; if (hv > hMax) hMax = hv; }
+        double skirt = size * Geo.Radius * 0.02 + 20.0 + (hMax - hMin);
         var ring = new int[border];
         int r = 0;
         for (int i = 0; i < res; i++) ring[r++] = i;                       // bas

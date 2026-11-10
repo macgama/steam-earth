@@ -38,8 +38,8 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
 ## Comment ça marche
 
 - **Cube-sphère** (`Geo.cs`) : les 6 faces d'un cube projetées sur une sphère de 6 371 km.
-- **Quadtree LOD** (`Planet.cs`) : chaque face est subdivisée près de la caméra (jusqu'au niveau 15, ≈ 10 m entre sommets),
-  et simplifiée au loin ; rien n'est détaillé derrière l'horizon. Les chunks sont construits en parallèle (`ChunkBuilder.cs`),
+- **Quadtree LOD** (`Planet.cs`) : chaque face est subdivisée près de la caméra (jusqu'au niveau 15, ≈ 10 m entre sommets ;
+  jusqu'au niveau 19, ≈ 0,6 m, dans les zones haute définition comme la Suisse), et simplifiée au loin ; rien n'est détaillé derrière l'horizon. Les chunks sont construits en parallèle (`ChunkBuilder.cs`),
   avec des « jupes » pour masquer les fissures entre niveaux.
 - **Précision** : positions en `double` (`Vec3d`). La caméra reste à l'origine de Godot et le monde est placé autour d'elle,
   tourné pour que la verticale locale soit l'axe Y (le ciel, le brouillard et la physique Godot restent corrects partout).
@@ -49,6 +49,16 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
   dans `user://cache/`. Plus on est loin, plus on lit un aperçu grossier (60, 120, 240 m). Tant qu'une tuile n'est pas
   arrivée, le chunk utilise une donnée plus grossière puis se reconstruit tout seul.
   Les tuiles de `data/detail/` (Suisse) restent utilisées en priorité, sans réseau.
+- **Suisse à 0,5 m** (`Data/SwissAlti3D.cs`) : près du sol (écart entre sommets < 16 m), le relief vient de
+  **swissALTI3D** (swisstopo), le modèle du terrain nu à 0,5 m, en tuiles de 1 km en projection suisse LV95.
+  Chaque fichier contient aussi des aperçus à 1, 2 et 4 m ; on ne télécharge que les blocs de 128 × 128 pixels utiles
+  (≈ 50 Ko chacun, ~16 Mo pour un km² complet à 0,5 m, ~200 Ko à 4 m). Les coordonnées GPS sont converties en LV95
+  (formules swisstopo) et l'URL de chaque tuile vient de `data/swissalti3d_index.bin` (année du relevé par km²).
+  En attendant les données, c'est le 30 m qui s'affiche. Le même relief sert au contact des pieds en mode marche.
+
+| Lauterbrunnen, avant (30 m) | Même endroit, swissALTI3D 0,5 m | Lauterbrunnen vu de 170 m | À pied près de Grindelwald |
+|---|---|---|---|
+| ![](docs/lauterbrunnen-30m.jpg) | ![](docs/lauterbrunnen-05m-sol.jpg) | ![](docs/lauterbrunnen-05m.jpg) | ![](docs/grindelwald-marche-05m.jpg) |
 
 ## Couverture des sols : forêts, champs, glaciers, villes
 
@@ -163,6 +173,8 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 | `data/landcover/world_cover.bin.gz` | ESA WorldCover 2021 © ESA WorldCover project / Copernicus Sentinel data 2021, CC BY 4.0 | ~5 km |
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
+| Relief Suisse (streaming) | swissALTI3D © swisstopo (données ouvertes OGD, usage commercial autorisé avec mention de la source) | 0,5 m |
+| `data/swissalti3d_index.bin` | index des tuiles swissALTI3D (API STAC de data.geo.admin.ch), `tools/swissalti3d/build_index.py` | 1 km |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
