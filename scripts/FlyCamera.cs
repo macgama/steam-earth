@@ -165,11 +165,11 @@ public partial class FlyCamera : Camera3D
         Speed = baseSpeed * SpeedMultiplier;
         if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
 
-        // Contrainte au sol : les yeux jamais sous 1,7 m au-dessus du relief
+        // Contrainte au sol : les yeux jamais sous 1,7 m au-dessus du relief ; en mer, on peut plonger jusqu'au fond
         up = PosD.Normalized();
         Geo.ToLatLon(up, out lat, out lon);
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
-        double eye = GroundHeight + EyeHeight;
+        double eye = (Altitude < GroundHeight + EyeHeight + 50 ? HeightProvider.FloorHeight(lat, lon) : GroundHeight) + EyeHeight;
         double above = Altitude - eye;
         if (above < 0) PosD = up * (Geo.Radius + eye);
         Grounded = above < 0.05;

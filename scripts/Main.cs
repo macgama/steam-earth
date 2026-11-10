@@ -20,6 +20,8 @@ public partial class Main : Node3D
     DirectionalLight3D _sun;
     Weather _weather;
     Atmosphere _atmosphere;
+    Waves _waves;
+    Ocean _ocean;
     PoliticalLayer _political;
     RoadLayer _roads;
     PlacesLayer _places;
@@ -85,6 +87,11 @@ public partial class Main : Node3D
         AddChild(_weather);
         _atmosphere = new Atmosphere { Name = "Atmosphere", Camera = _camera, Planet = _planet, Weather = _weather, Sun = _sun, Env = _environment };
         AddChild(_atmosphere);
+        // Océans : houle réelle (NOAA GFS-Wave) et fonds marins (GEBCO) ; après Atmosphere (brouillard sous l'eau)
+        _waves = new Waves { Name = "Waves" };
+        AddChild(_waves);
+        _ocean = new Ocean { Name = "Ocean", Camera = _camera, Waves = _waves, Atmosphere = _atmosphere, Env = _environment };
+        AddChild(_ocean);
         _political = new PoliticalLayer { Name = "Political", Camera = _camera, Planet = _planet };
         AddChild(_political);
         _roads = new RoadLayer { Name = "Roads", Camera = _camera, Planet = _planet };
@@ -118,7 +125,7 @@ public partial class Main : Node3D
         _hud.AddThemeConstantOverride("outline_size", 4);
         layer.AddChild(_hud);
         // Mention obligatoire des données OpenStreetMap (licence ODbL)
-        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + Timetable.Attribution + ", " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM, NASA Black Marble", HorizontalAlignment = HorizontalAlignment.Right };
+        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + Timetable.Attribution + ", " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM, NASA Black Marble, " + Bathymetry.Attribution + ", NOAA GFS / WAVEWATCH III", HorizontalAlignment = HorizontalAlignment.Right };
         _credits.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomRight, Control.LayoutPresetMode.KeepSize, 10);
         _credits.GrowHorizontal = Control.GrowDirection.Begin;
         _credits.GrowVertical = Control.GrowDirection.Begin;
@@ -226,6 +233,7 @@ public partial class Main : Node3D
             $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}   obstacles {Obstacles.Count:N0}\n" +
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
+            $"Océan : {_ocean.Status}{(_ocean.Underwater ? "   [SOUS L'EAU]" : "")}\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
             (_camera.Vehicle != null ? _camera.Vehicle.Hud() + "\n" : "") +
             $"FPS {Engine.GetFramesPerSecond()}   graphismes : {GraphicsQuality.Name(GraphicsQuality.Level)} (O pour changer)\n" +

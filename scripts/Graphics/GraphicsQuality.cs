@@ -63,6 +63,12 @@ public sealed record QualityProfile
     /// <summary>Résolution 3D par défaut de ce niveau (le joueur peut la changer à part).</summary>
     public float DefaultRenderScale { get; init; }
 
+    // ---- Océans et lacs (Ocean, shaders/ocean.gdshader)
+    /// <summary>Nombre de vagues de Gerstner additionnées (coût du shader de l'eau proportionnel).</summary>
+    public int WaterWaves { get; init; }
+    /// <summary>Niveau max du quadtree en mer près de la surface (16 ≈ 5 m, 17 ≈ 2,5 m, 18 ≈ 1,2 m entre sommets).</summary>
+    public int WaterMaxLevel { get; init; }
+
     // ---- Météo
     public int CloudSubdivisions { get; init; }
     public int GlobalCloudSegments { get; init; }
@@ -165,6 +171,8 @@ public static class GraphicsQuality
             Ssao = l >= QualityLevel.High,
             Glow = l >= QualityLevel.Medium,
             DefaultRenderScale = P(0.8f, 1f, 1f, 1f),
+            WaterWaves = P(16, 32, 48, 64),
+            WaterMaxLevel = P(16, 16, 17, 18),
             CloudSubdivisions = P(16, 32, 48, 96),
             GlobalCloudSegments = P(96, 128, 192, 256),
             PrecipitationFactor = P(0.3f, 0.6f, 1f, 1.5f),
