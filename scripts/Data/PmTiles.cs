@@ -99,8 +99,19 @@ public sealed class PmTilesArchive
         catch (Exception) { return null; }
     }
 
-    /// <summary>Tuile décompressée (octets MVT), null si la tuile n'existe pas (zone vide).</summary>
+    readonly ConcurrentDictionary<(int, int, int), Task<byte[]>> _tilesInFlight = new();
+
+    /// <summary>Tuile décompressée (octets MVT), null si la tuile n'existe pas (zone vide).
+    /// Deux couches qui demandent la même tuile en même temps (routes et noms de rues) ne la téléchargent qu'une fois.</summary>
     public async Task<byte[]> GetTileAsync(int z, int x, int y)
+    {
+        var key = (z, x, y);
+        var task = _tilesInFlight.GetOrAdd(key, k => GetTileCoreAsync(k.Item1, k.Item2, k.Item3));
+        try { return await task; }
+        finally { _tilesInFlight.TryRemove(new KeyValuePair<(int, int, int), Task<byte[]>>(key, task)); }
+    }
+
+    async Task<byte[]> GetTileCoreAsync(int z, int x, int y)
     {
         string path = Path.Combine(_tileCache, $"{z}_{x}_{y}.bin");
         if (File.Exists(path))
@@ -128,7 +139,10 @@ public sealed class PmTilesArchive
             break;
         }
         if (!known) throw new IOException("tuile indisponible (réseau)");
-        await File.WriteAllBytesAsync(path, raw ?? Array.Empty<byte>());
+        // écriture puis renommage : un autre lecteur ne voit jamais un fichier à moitié écrit
+        string tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        await File.WriteAllBytesAsync(tmp, raw ?? Array.Empty<byte>());
+        File.Move(tmp, path, true);
         return raw == null ? null : Decompress(raw, TileCompression);
     }
 

@@ -31,7 +31,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | Tab (ou bouton « Pays ») | menu des pays : clic = 500 m au-dessus de la capitale, recherche par nom |
 | B | afficher / masquer frontières et capitales |
 | T | afficher / masquer routes, chemins et voies ferrées |
-| N | afficher / masquer les noms des villes et villages |
+| N | afficher / masquer les noms des villes, villages et rues |
+| P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -163,6 +164,29 @@ dans `user://cache/overture/`.
 Pour la version commerciale, il sera plus sûr de copier les deux archives sur un serveur à nous (ou un CDN) plutôt que
 de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 
+## Transports : gares, arrêts, ports, aéroports, noms de rues
+
+- `TransitLayer.cs` (touche P) : gares et haltes, stations de métro, arrêts de tram et de bus, gares routières,
+  débarcadères et ports, funiculaires, téléphériques. Source : OpenStreetMap via Overture Maps, archive `base`
+  (couche `infrastructure`, uniquement au zoom 13, ~3 km par tuile), chargée dans un rayon de ~3 km quand on est à moins
+  de 2,5 km du sol. Le mode (train, métro, tram, bus…) est déduit de la classe Overture et des étiquettes OSM d'origine
+  (`source_tags`). Les quais et poteaux d'un même arrêt (« Bern Bahnhof (Z) », « (H) »…) sont regroupés en un seul
+  pictogramme. Les gares se voient à ~4,5 km, les arrêts de bus à ~550 m.
+- Aéroports : `data/transport/airports.tsv.gz` (49 000 aéroports, aérodromes et hydrobases d'**OurAirports**, domaine
+  public, `tools/transport/build_airports.py`), avec leur code IATA : grands aéroports visibles jusqu'à 350 km (d'avion),
+  aéroports régionaux à 120 km, aérodromes à 15 km.
+- `StreetNamesLayer.cs` (touche N) : noms des rues et routes (mêmes tuiles z14 que les routes, déjà en cache), au-dessus
+  de la chaussée quand on s'en approche (~250 m pour une rue, 600 m pour une route principale).
+- `LabelTileLayer.cs` : base commune (chargement par tuiles, fusion des doublons, fondu, altitude affinée en s'approchant).
+- Pictogrammes : `data/transport/icons.rgba.gz`, dessinés depuis la police Noto Color Emoji (SIL OFL 1.1, voir
+  `data/transport/LICENCES.md`) par `tools/transport/build_icons.py`.
+
+| Berne : gare, arrêts de bus et de tram | Genève : débarcadères, gare routière, rues | Aéroport de Zurich d'avion |
+|---|---|---|
+| ![](docs/transports-berne.jpg) | ![](docs/transports-geneve.jpg) | ![](docs/aeroport-zurich.jpg) |
+
+Les lignes et horaires (trains, bus, avions qui circulent) ne sont pas encore là : voir « Limites connues ».
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -178,6 +202,8 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
+| Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
+| `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
 Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
@@ -207,6 +233,10 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 - Couleurs par sommet provisoires → textures + shader (herbe, roche, neige selon pente et altitude).
 - Relief plus fin que 30 m : pays par pays (Suisse 0,5 m avec swissALTI3D, France 1 m avec le RGE ALTI…).
 - Copernicus n'a pas de fichier pour l'Arménie et l'Azerbaïdjan (relief à ~5 km là-bas pour l'instant).
+- Transports qui circulent : tracés des lignes (relations OSM `route=bus/tram/train/subway/ferry`, ODbL) et horaires
+  réels (GTFS : opentransportdata.swiss pour la Suisse, transport.data.gouv.fr pour la France…, licence à vérifier
+  flux par flux pour un jeu vendu). Avions : OurAirports + lignes aériennes à reconstituer (pas de source gratuite
+  d'horaires mondiaux utilisable commercialement ; OpenSky est réservé au non commercial).
 - Océan = surface plate colorée → shader d'eau, vagues, physique de flottaison.
 - Atmosphère : ciel procédural Godot → diffusion atmosphérique vue de l'espace.
 - Collisions physiques pour les véhicules (colliders générés pour les chunks proches).

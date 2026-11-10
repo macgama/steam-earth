@@ -32,9 +32,14 @@ public static class Overture
     /// <summary>Version utilisée (affichage), une fois une couche ouverte.</summary>
     public static string Release { get; private set; }
 
-    /// <summary>Ouvre une couche (« transportation », « divisions »…) de la version la plus récente qui la contient.
-    /// Null hors ligne sans cache.</summary>
-    public static async Task<PmTilesArchive> OpenAsync(string theme)
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<PmTilesArchive>> _open = new();
+
+    /// <summary>Ouvre une couche (« transportation », « divisions », « base »…) de la version la plus récente qui
+    /// la contient. Null hors ligne sans cache. Une seule ouverture par couche : les couches du jeu qui lisent les
+    /// mêmes tuiles (routes et noms de rues) partagent l'archive et son cache disque.</summary>
+    public static Task<PmTilesArchive> OpenAsync(string theme) => _open.GetOrAdd(theme, OpenCoreAsync);
+
+    static async Task<PmTilesArchive> OpenCoreAsync(string theme)
     {
         for (int pass = 0; pass < 2; pass++)
         {
