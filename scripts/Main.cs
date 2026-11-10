@@ -26,6 +26,8 @@ public partial class Main : Node3D
     BuildingsLayer _buildings;
     TransitLayer _transit;
     StreetNamesLayer _streets;
+    TransitRide _ride;
+    string _rideTest;
     Label _credits;
     CountryMenu _menu;
     string _gotoCountry;
@@ -86,6 +88,8 @@ public partial class Main : Node3D
         AddChild(_transit);
         _streets = new StreetNamesLayer { Name = "StreetNames", Camera = _camera, Planet = _planet };
         AddChild(_streets);
+        _ride = new TransitRide { Name = "TransitRide", Camera = _camera, Planet = _planet, Atmosphere = _atmosphere };
+        AddChild(_ride);
         _menu = new CountryMenu { Name = "CountryMenu", Camera = _camera };
         AddChild(_menu);
         _buildings = new BuildingsLayer { Name = "Buildings", Camera = _camera, Planet = _planet, Places = _places, Political = _political, Menu = _menu };
@@ -119,6 +123,8 @@ public partial class Main : Node3D
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
+            if (a.StartsWith("--ride=")) { _rideTest = a.Substring(7); _minFrames = 300; } // N,minutes après le départ
+            if (a == "--board") _rideTest = "board";
             if (a == "--fp") _camera.ThirdPerson = false;           // marche à la première personne
             if (a.StartsWith("--pitch=")) pitch = double.Parse(a.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
             if (a.StartsWith("--country=")) _gotoCountry = a.Substring(10);
@@ -147,6 +153,18 @@ public partial class Main : Node3D
             if (c != null) _menu.GoTo(c);
         }
         if (_openMenu) _menu.CallDeferred(CountryMenu.MethodName.Toggle);
+        if (_rideTest == "board") StartBoardTest();
+        else if (_rideTest != null)
+        {
+            var r = _rideTest.Split(',');
+            _ride.TestRide(r[0], r.Length > 1 ? double.Parse(r[1], System.Globalization.CultureInfo.InvariantCulture) : 0);
+        }
+    }
+
+    async void StartBoardTest()
+    {
+        while (!_ride.Loaded) await ToSignal(GetTree().CreateTimer(0.5), SceneTreeTimer.SignalName.Timeout);
+        _ride.OpenBoard();
     }
 
     public override void _Process(double delta)
@@ -171,14 +189,14 @@ public partial class Main : Node3D
             $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}\n" +
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
-            $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
+            $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
             "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  Tab pays  B frontières  T routes/rails  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville";
 
         if (_shotPath != null)
         {
-            _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
-            if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000)
+            _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
+            if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))
             {
                 var img = GetViewport().GetTexture().GetImage();
                 img.SavePng(_shotPath);

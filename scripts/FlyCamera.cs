@@ -25,8 +25,11 @@ public partial class FlyCamera : Camera3D
     public bool ThirdPerson = true;  // vue arrière (sinon : vue par les yeux du personnage)
     public double CamDistance = 4.5; // distance caméra–personnage en vue arrière (m)
 
-    /// <summary>Position du joueur : le personnage en mode marche, sinon la caméra.</summary>
-    public Vec3d PlayerPos => Walk && Body != null ? Body.PosD : PosD;
+    /// <summary>Véhicule dans lequel le joueur voyage (train, bus…), null sinon : la caméra le suit.</summary>
+    public IRide Ride;
+
+    /// <summary>Position du joueur : le véhicule, le personnage en mode marche, sinon la caméra.</summary>
+    public Vec3d PlayerPos => Ride != null ? Ride.Anchor : Walk && Body != null ? Body.PosD : PosD;
 
     public double Altitude => PosD.Length() - Geo.Radius;
     public double GroundHeight { get; private set; }
@@ -62,7 +65,7 @@ public partial class FlyCamera : Camera3D
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
             if (mb.ButtonIndex == MouseButton.Left) Input.MouseMode = Input.MouseModeEnum.Captured;
-            bool zoom = Walk && Body != null && ThirdPerson; // en vue arrière, la molette rapproche / éloigne la caméra
+            bool zoom = (Walk && Body != null || Ride != null) && ThirdPerson; // en vue arrière, la molette rapproche / éloigne la caméra
             if (mb.ButtonIndex == MouseButton.WheelUp) { if (zoom) CamDistance = Math.Max(1.5, CamDistance / 1.15); else SpeedMultiplier *= 1.25; }
             if (mb.ButtonIndex == MouseButton.WheelDown) { if (zoom) CamDistance = Math.Min(40, CamDistance * 1.15); else SpeedMultiplier /= 1.25; }
         }
@@ -70,7 +73,7 @@ public partial class FlyCamera : Camera3D
         {
             Yaw += mm.Relative.X * 0.0025;
             // En vue arrière, on limite pour ne pas passer sous le personnage ni à la verticale
-            bool tp = Walk && Body != null && ThirdPerson;
+            bool tp = (Walk && Body != null || Ride != null) && ThirdPerson;
             Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025, tp ? -1.35 : -1.55, tp ? 0.7 : 1.55);
         }
         else if (e is InputEventKey k && k.Pressed && !k.Echo)
@@ -78,7 +81,7 @@ public partial class FlyCamera : Camera3D
             switch (k.PhysicalKeycode)
             {
                 case Key.Escape: Input.MouseMode = Input.MouseModeEnum.Visible; break;
-                case Key.F: SetWalk(!Walk); break;
+                case Key.F: if (Ride == null) SetWalk(!Walk); break;
                 case Key.V: ThirdPerson = !ThirdPerson; if (ThirdPerson) Pitch = Math.Clamp(Pitch, -1.35, 0.7); break;
                 case Key.Key1: Teleport(46.70, 7.80, 1500, 120, -12); break;   // Interlaken, vers l'Eiger
                 case Key.Key2: Teleport(46.03, 7.70, 600, 200, 5); break;     // Zermatt, vers le Cervin
@@ -106,6 +109,7 @@ public partial class FlyCamera : Camera3D
 
     public override void _Process(double delta)
     {
+        if (Ride != null) { ProcessRide(); return; }
         if (Walk && Body != null) { ProcessWalk(delta); return; }
 
         var up = PosD.Normalized();
@@ -201,6 +205,34 @@ public partial class FlyCamera : Camera3D
         Body.Place(PosD, WorldRotation);
     }
 
+    /// <summary>En voyage : vue extérieure qui suit le véhicule (molette = distance), ou vue depuis la place
+    /// du passager (V). Les touches de déplacement sont sans effet.</summary>
+    void ProcessRide()
+    {
+        var anchor = Ride.Anchor; // point de vue du passager
+        var up = anchor.Normalized();
+        Vec3d? target = null;
+        if (ThirdPerson)
+        {
+            Geo.LocalFrame(up, out var east, out var north);
+            var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
+            var look = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
+            double dist = Math.Max(CamDistance, Ride.ViewDistance);
+            PosD = anchor - look * dist;
+            // le relief fin peut être encore en téléchargement : on prend le plus haut des deux niveaux de détail
+            Geo.ToLatLon(PosD.Normalized(), out double cla, out double clo);
+            double ground = Math.Max(HeightProvider.SurfaceHeight(cla, clo, 0.5), HeightProvider.SurfaceHeight(cla, clo, 30));
+            double above = PosD.Length() - Geo.Radius - ground;
+            if (above < 2) PosD = PosD.Normalized() * (PosD.Length() + 2 - above);
+            target = anchor;
+        }
+        else PosD = anchor;
+        Speed = Ride.Speed;
+        Geo.ToLatLon(PosD.Normalized(), out double lat, out double lon);
+        GroundHeight = HeightProvider.SurfaceHeight(lat, lon, 2);
+        UpdateTransform(target);
+    }
+
     static double AboveGround(Vec3d p)
     {
         Geo.ToLatLon(p.Normalized(), out double lat, out double lon);
@@ -252,4 +284,14 @@ public partial class FlyCamera : Camera3D
         Near = (float)Math.Clamp(h * 0.002, 0.1, 2000);
         Far = (float)Math.Min(horizon * 1.1 + 50_000, 60_000_000);
     }
+}
+
+/// <summary>Véhicule suivi par la caméra pendant un voyage (voir <see cref="TransitRide"/>).</summary>
+public interface IRide
+{
+    /// <summary>Place du passager (repère planète), recalculée pour l'instant présent.</summary>
+    Vec3d Anchor { get; }
+    /// <summary>Distance minimale de la caméra en vue extérieure (longueur du véhicule).</summary>
+    double ViewDistance { get; }
+    double Speed { get; }
 }
