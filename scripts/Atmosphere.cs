@@ -20,6 +20,33 @@ public partial class Atmosphere : Node3D
     /// <summary>Décalage par rapport à l'heure réelle (touches + / − / R), pour tester.</summary>
     public double TimeOffsetHours;
     public DateTime GameUtc => DateTime.UtcNow.AddHours(TimeOffsetHours);
+
+    /// <summary>
+    /// « Jour permanent » (touche J) : le soleil reste comme en début d'après-midi là où se trouve le joueur.
+    /// L'heure affichée et la météo restent réelles ; seul l'éclairage change. Réglage mémorisé.
+    /// </summary>
+    public bool AlwaysDay
+    {
+        get => _alwaysDay;
+        set { _alwaysDay = value; SaveSetting("always_day", value); }
+    }
+    bool _alwaysDay = LoadSetting("always_day", false);
+    const double AlwaysDaySolarHour = 13.0;
+    const string SettingsPath = "user://settings.cfg";
+
+    static bool LoadSetting(string key, bool fallback)
+    {
+        var cfg = new ConfigFile();
+        return cfg.Load(SettingsPath) == Error.Ok ? (bool)cfg.GetValue("affichage", key, fallback) : fallback;
+    }
+
+    static void SaveSetting(string key, bool value)
+    {
+        var cfg = new ConfigFile();
+        cfg.Load(SettingsPath); // garde les autres réglages s'il y en a
+        cfg.SetValue("affichage", key, value);
+        cfg.Save(SettingsPath);
+    }
     public WeatherSample Current { get; private set; }
     public double SunElevationDeg { get; private set; }
 
@@ -120,6 +147,7 @@ public partial class Atmosphere : Node3D
             if (k.PhysicalKeycode is Key.Equal or Key.KpAdd) TimeOffsetHours += k.ShiftPressed ? 0.25 : 1;
             if (k.PhysicalKeycode is Key.Minus or Key.KpSubtract) TimeOffsetHours -= k.ShiftPressed ? 0.25 : 1;
             if (k.PhysicalKeycode == Key.R && !k.Echo) TimeOffsetHours = 0;
+            if (k.PhysicalKeycode == Key.J && !k.Echo) AlwaysDay = !AlwaysDay;
         }
     }
 
@@ -134,7 +162,14 @@ public partial class Atmosphere : Node3D
         Current = w;
 
         // --- Soleil (repère planète : la lumière est enfant de la planète)
-        var sunDir = SunPosition.Direction(utc);
+        var sunUtc = utc;
+        if (AlwaysDay)
+        {
+            // Instant UTC où il est 13 h solaires à la longitude du joueur (même jour, donc même saison).
+            double h = AlwaysDaySolarHour - lon / 15.0;
+            sunUtc = utc.Date.AddHours(h);
+        }
+        var sunDir = SunPosition.Direction(sunUtc);
         Sun.Transform = new Transform3D(Basis.LookingAt(-sunDir.ToVector3(), Math.Abs(sunDir.Y) > 0.99 ? Vector3.Right : Vector3.Up), Vector3.Zero);
         double sinElev = up.Dot(sunDir);
         SunElevationDeg = Math.Asin(Math.Clamp(sinElev, -1, 1)) * 180 / Math.PI;

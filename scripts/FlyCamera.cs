@@ -105,6 +105,7 @@ public partial class FlyCamera : Camera3D
     public const double LookHeight = 1.55;       // la caméra vise la tête du personnage
     public bool Grounded { get; private set; }
     public bool AutoForward;  // test automatique : avance seul (argument --autowalk)
+    public bool AutoJump;     // test automatique : tient Espace (argument --climb)
     public bool InputBlocked; // menu ouvert : les touches servent à l'interface
 
     public override void _Process(double delta)
@@ -145,6 +146,14 @@ public partial class FlyCamera : Camera3D
         double above = Altitude - eye;
         if (above < 0) PosD = up * (Geo.Radius + eye);
         Grounded = above < 0.05;
+        // Décors : la caméra ne rentre pas dans les bâtiments ni les troncs. Arrivée par le haut : posée sur le
+        // toit ; sinon repoussée hors des murs.
+        if (agl < 300 && Obstacles.Inside(PosD, 0.3, out double roof))
+        {
+            double alt = PosD.Length() - Geo.Radius;
+            if (alt > roof - 3) PosD = up * (Geo.Radius + roof + 0.3 + EyeHeight * 0.2);
+            else PosD = Obstacles.Resolve(PosD - up * 0.3, 0.4, 0.6) + up * 0.3;
+        }
 
         UpdateTransform();
     }
@@ -164,7 +173,7 @@ public partial class FlyCamera : Camera3D
         if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
         if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                     // A = Q en AZERTY
         bool sprint = (keys && Input.IsPhysicalKeyPressed(Key.Shift)) || AutoForward;
-        bool jump = keys && Input.IsPhysicalKeyPressed(Key.Space);
+        bool jump = (keys && Input.IsPhysicalKeyPressed(Key.Space)) || (AutoJump && AutoForward);
 
         Body.Step(move, sprint ? SprintSpeed : WalkSpeed, jump, delta);
         Speed = Body.Speed;
@@ -185,11 +194,12 @@ public partial class FlyCamera : Camera3D
             var head = Body.PosD + up * LookHeight;
             // Si une pente se trouve entre le personnage et la caméra, on rapproche la caméra
             double dist = CamDistance;
-            const int samples = 10;
+            const int samples = 24; // pas fin : les murs et les troncs sont minces
             for (int i = 1; i <= samples; i++)
             {
                 double d = CamDistance * i / samples;
-                if (AboveGround(head - look * d) < 0.4) { dist = Math.Max(0.6, CamDistance * (i - 1) / samples); break; }
+                var p = head - look * d;
+                if (AboveGround(p) < 0.4 || Obstacles.Inside(p, 0.25, out _)) { dist = Math.Max(0.6, CamDistance * (i - 1) / samples); break; }
             }
             PosD = head - look * dist;
             double above = AboveGround(PosD);
@@ -236,7 +246,8 @@ public partial class FlyCamera : Camera3D
     static double AboveGround(Vec3d p)
     {
         Geo.ToLatLon(p.Normalized(), out double lat, out double lon);
-        return p.Length() - Geo.Radius - HeightProvider.SurfaceHeight(lat, lon);
+        double ground = Math.Max(HeightProvider.SurfaceHeight(lat, lon), Obstacles.SurfaceBelow(p, 1.0));
+        return p.Length() - Geo.Radius - ground;
     }
 
     /// <summary>

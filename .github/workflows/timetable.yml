@@ -1,0 +1,38 @@
+# Horaires officiels des transports publics suisses (opentransportdata.swiss, GTFS), convertis chaque semaine
+# au format compact du jeu et publiés dans la release « timetable-latest », que le jeu télécharge.
+name: Horaires transports suisses
+
+on:
+  schedule:
+    # opentransportdata.swiss publie une nouvelle version le mercredi (horaire mis à jour chaque semaine)
+    - cron: "0 5 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timetable
+  cancel-in-progress: false
+
+jobs:
+  timetable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/transport
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/transport/build_timetable.py --download timetable_ch.bin.gz
+      - name: Publier dans la release timetable-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view timetable-latest >/dev/null 2>&1 || \
+            gh release create timetable-latest --title "Horaires suisses (mise à jour automatique)" \
+              --notes "Horaires officiels des transports publics suisses (opentransportdata.swiss, GTFS), convertis chaque semaine par le workflow « Horaires transports suisses ». Ne pas supprimer : le jeu télécharge timetable_ch.bin.gz depuis cette release. Source : opentransportdata.swiss (usage commercial autorisé avec mention de la source)." \
+              --latest=false
+          gh release upload timetable-latest timetable_ch.bin.gz --clobber

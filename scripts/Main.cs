@@ -24,6 +24,7 @@ public partial class Main : Node3D
     RoadLayer _roads;
     PlacesLayer _places;
     BuildingsLayer _buildings;
+    StartMenu _start;
     TransitLayer _transit;
     StreetNamesLayer _streets;
     TransitRide _ride;
@@ -35,6 +36,7 @@ public partial class Main : Node3D
     string _shotPath;
     static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
     int _frames, _idleFrames, _minFrames = 30;
+    int _walkTest; // > 0 : nombre d'images de marche automatique restant à faire après le chargement
 
     public override void _Ready()
     {
@@ -42,6 +44,7 @@ public partial class Main : Node3D
         LandCover.Init();
         TimeZones.Init();
         Geography.Init();
+        NightLights.Init();
         Overture.Init(System.IO.Path.Combine(OS.GetUserDataDir(), "cache", "overture"));
 
         _camera = new FlyCamera { Name = "Camera" };
@@ -94,7 +97,10 @@ public partial class Main : Node3D
         AddChild(_menu);
         _buildings = new BuildingsLayer { Name = "Buildings", Camera = _camera, Planet = _planet, Places = _places, Political = _political, Menu = _menu };
         AddChild(_buildings);
-        _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0));
+        _start = new StartMenu { Name = "StartMenu", Camera = _camera, Buildings = _buildings };
+        AddChild(_start);
+        _buildings.Start = _start;
+        _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
 
         var layer = new CanvasLayer();
         _hud = new Label { Position = new Vector2(12, 10) };
@@ -103,7 +109,7 @@ public partial class Main : Node3D
         _hud.AddThemeConstantOverride("outline_size", 4);
         layer.AddChild(_hud);
         // Mention obligatoire des données OpenStreetMap (licence ODbL)
-        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM", HorizontalAlignment = HorizontalAlignment.Right };
+        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM, NASA Black Marble", HorizontalAlignment = HorizontalAlignment.Right };
         _credits.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomRight, Control.LayoutPresetMode.KeepSize, 10);
         _credits.GrowHorizontal = Control.GrowDirection.Begin;
         _credits.GrowVertical = Control.GrowDirection.Begin;
@@ -115,11 +121,15 @@ public partial class Main : Node3D
         AddChild(layer);
 
         int view = 1;
+        // Menu de départ au lancement, sauf pour les tests automatiques qui donnent déjà un lieu
+        bool startMenu = true;
         bool walk = false;
         double? pitch = null;
         double[] at = null;
         foreach (var a in OS.GetCmdlineUserArgs())
         {
+            if (a.StartsWith("--view=") || a.StartsWith("--at=") || a.StartsWith("--country=") || a.StartsWith("--build=") || a == "--walk" || a == "--autowalk" || a == "--menu" || a == "--nostart") startMenu = false;
+            if (a == "--start") startMenu = true;
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
@@ -130,6 +140,10 @@ public partial class Main : Node3D
             if (a.StartsWith("--country=")) _gotoCountry = a.Substring(10);
             if (a == "--menu") _openMenu = true;
             if (a == "--autowalk") { walk = true; _camera.AutoForward = true; _minFrames = 600; }
+            // --walktest=N : attend que le monde soit chargé, puis avance seul N images (test des collisions)
+            // (le personnage n'apparaît qu'une fois le monde chargé) ; --climb : en tenant Espace
+            if (a.StartsWith("--walktest=")) _walkTest = int.Parse(a.Substring(11));
+            if (a == "--climb") _camera.AutoJump = true;
             if (a.StartsWith("--at="))
             {
                 var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
@@ -138,7 +152,7 @@ public partial class Main : Node3D
             if (a.StartsWith("--build="))
             {
                 var p = Array.ConvertAll(a.Substring(8).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
-                _buildings.Build("test", p[0], p[1], p.Length > 2 ? p[2] : 1500);
+                _buildings.Build("test", p[0], p[1], p.Length > 2 ? p[2] : 1500, p.Length > 3 ? p[3] : 0);
             }
             if (a.StartsWith("--hours=")) _atmosphere.TimeOffsetHours = double.Parse(a.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
         }
@@ -153,6 +167,7 @@ public partial class Main : Node3D
             if (c != null) _menu.GoTo(c);
         }
         if (_openMenu) _menu.CallDeferred(CountryMenu.MethodName.Toggle);
+        if (startMenu) _start.CallDeferred(StartMenu.MethodName.Open, true);
         if (_rideTest == "board") StartBoardTest();
         else if (_rideTest != null)
         {
@@ -170,6 +185,8 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         _frames++;
+        _hud.Visible = !_start.IsOpen;
+        _planet.SunDirWorld = _sun.GlobalTransform.Basis.Z.Normalized();
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
@@ -186,18 +203,26 @@ public partial class Main : Node3D
             $"Lat {lat:F4}°  Lon {lon:F4}°\n" +
             $"Altitude {alt:N0} m   Sol {ground:N0} m   Hauteur {alt - ground:N0} m\n" +
             $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? $"[MARCHE{(_camera.Grounded ? "" : ", en l'air")}, {(_camera.ThirdPerson ? "vue arrière" : "1re personne")}]" : "")}\n" +
-            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}\n" +
-            $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
+            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}   obstacles {Obstacles.Count:N0}\n" +
+            $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  Tab pays  B frontières  T routes/rails  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre";
 
         if (_shotPath != null)
         {
             _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
+            if (_walkTest > 0 && ((_frames > _minFrames && _idleFrames > 20) || _camera.AutoForward))
+            {
+                if (!_camera.AutoForward) { _camera.SetWalk(true); _camera.AutoForward = true; }
+                _walkTest--;
+                if (_walkTest % 10 == 0) GD.Print($"[Test] marche : {lat:F6} {lon:F6} alt {alt:F1} sol {ground:F1} obstacles {Obstacles.Count}");
+                return;
+            }
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))
             {
+                _camera.AutoForward = false;
                 var img = GetViewport().GetTexture().GetImage();
                 img.SavePng(_shotPath);
                 GD.Print($"[Main] capture enregistrée : {_shotPath} (après {_frames} images)");

@@ -28,11 +28,13 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
 | R | revenir à l'heure réelle |
+| J | jour permanent : le soleil reste haut partout (l’heure et la météo restent réelles ; réglage mémorisé) |
 | Tab (ou bouton « Pays ») | menu des pays : clic = 500 m au-dessus de la capitale, recherche par nom |
 | B | afficher / masquer frontières et capitales |
 | T | afficher / masquer routes, chemins et voies ferrées |
 | N | afficher / masquer les noms des villes, villages et rues |
 | P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
+| M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
@@ -81,8 +83,32 @@ champs, zones bâties, roche/désert, glaciers et neiges éternelles, zones humi
 |---|---|---|
 | ![](docs/sols-foret.jpg) | ![](docs/sols-forets-champs.jpg) | ![](docs/sols-glacier.jpg) |
 
-Limites actuelles : pas de collision avec les arbres ; les routes apparaissent comme zones bâties (grises) dans
+Limites actuelles : les routes apparaissent comme zones bâties (grises) dans
 WorldCover ; la neige saisonnière n'est pas encore simulée (seuls glaciers et neiges éternelles sont blancs).
+
+## Collisions avec les décors
+
+`Obstacles.cs` : le personnage (mode marche) ne traverse plus les troncs d'arbres, les buissons ni les murs des
+bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle, ou contour avec ses **cours
+intérieures**, qui restent praticables) avec une altitude de base et un toit. Les obstacles sont rangés dans une grille
+d'environ 200 m et rattachés au nœud qui les affiche (chunk d'arbres proche, tuile de bâtiments) : caché = ignoré,
+supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser quand les images sont lentes.
+
+- **Toits** : plats ou à pans (même pente que le maillage), on y marche comme sur le sol et on tombe en passant le bord.
+- **Escalade** : tenir **Espace** contre un mur (ou un tronc) fait grimper à 2,5 m/s jusqu'au toit. C'est aussi le
+  moyen d'entrer dans une cour fermée : monter, traverser le toit, redescendre.
+- **Caméra** : en vue arrière elle se rapproche pour ne pas passer derrière un mur ; en vol libre elle se pose sur les
+  toits et ne traverse plus les murs.
+- Tests : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,300 --walktest=200` (Berne, marche vers un mur) ;
+  ajouter `--climb` pour escalader (le personnage monte à 12 m, traverse le toit et redescend de l'autre côté).
+
+## Lumières des villes
+
+La nuit, les villes s'allument d'après l'image **NASA Black Marble 2016** (satellite Suomi NPP, capteur VIIRS).
+Les images de la NASA ne sont pas soumises au droit d'auteur : usage commercial autorisé, avec mention de la source
+et sans laisser croire à un soutien de la NASA. Le shader du terrain (`shaders/terrain.gdshader`) lit la carte par pixel
+et ne l'allume que du côté nuit de la planète ; près du sol, la lueur est atténuée et les fenêtres des bâtiments prennent le relais.
+La carte est régénérée par le workflow « Lumières des villes » (`tools/nightlights/build_nightlights.py`).
 
 ## Météo et heure réelles
 
@@ -190,6 +216,18 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 | ![](docs/transports-berne.jpg) | ![](docs/transports-geneve.jpg) | ![](docs/aeroport-zurich.jpg) |
 
 Les lignes et horaires (trains, bus, avions qui circulent) ne sont pas encore là : voir « Limites connues ».
+## Menu de départ : commencer n'importe où
+
+Au lancement (et ensuite avec **M**), le joueur choisit où commencer :
+
+- **Reprendre** là où il était (position gardée toutes les 5 s dans `user://last_position.json`) ;
+- **chercher une ville** parmi les 7 342 villes de Natural Earth (noms en français, `data/geo/cities.tsv.gz`, généré par
+  `tools/geo/build_cities.py`) ou un pays : on arrive 500 m au-dessus et la ville est construite ;
+- **cliquer sur la Terre** : chaque clic rapproche (de l'orbite jusqu'à ~25 km), le dernier clic atterrit à cet endroit
+  exact, n'importe où sur la planète. Clic droit ou « Reculer » : vue plus large.
+
+Les tests automatiques (`--at`, `--view`, `--country`, `--build`…) sautent ce menu ; `--start` le force.
+
 ## Bâtiments des villes et villages, à la demande
 
 Les bâtiments réels ne sont construits que là où le joueur le demande :
@@ -201,6 +239,9 @@ Les bâtiments réels ne sont construits que là où le joueur le demande :
 
 La zone construite est un disque autour du centre : ~350 m pour un hameau, 700 m pour un village, 1,5 km pour une
 petite ville, 4 km pour une capitale, 2 à 7 km pour une ville selon sa population, 8 km pour une mégapole.
+Les **grandes villes s'agrandissent au fur et à mesure** : quand le joueur arrive à moins de 1,5 km du bord de la zone
+déjà construite, elle grandit (jusqu'à 15 km pour une capitale, 6 à 20 km pour une ville, 30 km pour une mégapole) ;
+seules les tuiles du nouvel anneau sont reconstruites.
 Les villes construites sont gardées dans `user://cities.json` et réapparaissent au lancement suivant (leurs tuiles ne
 sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
 
@@ -218,9 +259,9 @@ sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
 
 Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 
-| Berne, la vieille ville et la cathédrale | Lauterbrunnen |
-|---|---|
-| ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) |
+| Berne, la vieille ville et la cathédrale | Lauterbrunnen | Berne agrandie, à la tombée de la nuit | Menu de départ |
+|---|---|---|---|
+| ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) | ![](docs/batiments-berne-nuit.jpg) | ![](docs/menu-depart.jpg) |
 
 Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
 convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
@@ -237,12 +278,14 @@ textures de façades.
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Relief Suisse (streaming) | swissALTI3D © swisstopo (données ouvertes OGD, usage commercial autorisé avec mention de la source) | 0,5 m |
+| `data/nightlights/nightlights.bin.gz` | NASA Earth Observatory, Black Marble 2016 (Suomi NPP VIIRS), domaine public | ~5 km |
 | `data/swissalti3d_index.bin` | index des tuiles swissALTI3D (API STAC de data.geo.admin.ch), `tools/swissalti3d/build_index.py` | 1 km |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 | Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
+| `data/geo/cities.tsv.gz` | Natural Earth 1:10m populated places (domaine public) | 7 342 villes |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 

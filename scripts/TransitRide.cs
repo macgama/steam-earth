@@ -94,6 +94,7 @@ public partial class TransitRide : Node3D, IRide
     public override void _Input(InputEvent e)
     {
         if (e is not InputEventKey k || !k.Pressed || k.Echo) return;
+        if (Camera.InputBlocked && _state != State.Board) return; // un menu est ouvert
         if (_state == State.Board)
         {
             if (k.PhysicalKeycode >= Key.Key1 && k.PhysicalKeycode <= Key.Key9 || k.PhysicalKeycode >= Key.Kp1 && k.PhysicalKeycode <= Key.Kp9)

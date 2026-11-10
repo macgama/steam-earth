@@ -30,6 +30,9 @@ Heures en heure légale suisse (Europe/Zurich).
 import csv, datetime as dt, gzip, io, os, re, struct, sys, urllib.request, zipfile
 
 PERMALINK = "https://data.opentransportdata.swiss/dataset/timetable-{year}-gtfs2020/permalink"
+# Copie de secours tenue par la Mobility Database (MobilityData), si le site officiel ne répond pas
+MIRRORS = {2026: "https://storage.googleapis.com/download/storage/v1/b/mdb-latest/o/ch-unknown-swiss-federal-railways-sbb-gtfs-2898.zip?alt=media",
+           2027: "https://storage.googleapis.com/download/storage/v1/b/mdb-latest/o/ch-unknown-swiss-federal-railways-sbb-gtfs-3619.zip?alt=media"}
 
 
 def varint(n, out):
@@ -62,8 +65,10 @@ def minutes(t):
 def download(dest):
     """Horaire de l'année en cours (il change mi-décembre : on prend l'année du lendemain + 3 semaines)."""
     year = (dt.date.today() + dt.timedelta(days=21)).year
-    for y in (year, year - 1):
-        url = PERMALINK.format(year=y)
+    urls = [PERMALINK.format(year=year), MIRRORS.get(year), PERMALINK.format(year=year - 1), MIRRORS.get(year - 1)]
+    for url in urls:
+        if not url:
+            continue
         try:
             print("téléchargement", url, flush=True)
             req = urllib.request.Request(url, headers={"User-Agent": "steam-earth-timetable"})
@@ -73,7 +78,9 @@ def download(dest):
                     if not b:
                         break
                     f.write(b)
-            return dest
+            if zipfile.is_zipfile(dest):
+                return dest
+            print("  pas une archive GTFS", flush=True)
         except Exception as e:  # l'horaire de l'année suivante n'est publié qu'en automne
             print("  échec :", e, flush=True)
     raise SystemExit("aucun horaire GTFS téléchargeable")

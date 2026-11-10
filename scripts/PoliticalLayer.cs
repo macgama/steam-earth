@@ -66,7 +66,7 @@ public partial class PoliticalLayer : Node3D
         {
             var c = _capitalCountries[i];
             if (_capitals[i].label.Visible)
-                list.Add(new BuildingsLayer.Target(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), _capitals[i].label));
+                list.Add(new BuildingsLayer.Target(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0), _capitals[i].label));
         }
     }
 
