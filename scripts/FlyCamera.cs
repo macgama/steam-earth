@@ -25,8 +25,13 @@ public partial class FlyCamera : Camera3D
     public bool ThirdPerson = true;  // vue arrière (sinon : vue par les yeux du personnage)
     public double CamDistance = 4.5; // distance caméra–personnage en vue arrière (m)
 
-    /// <summary>Position du joueur : le personnage en mode marche, sinon la caméra.</summary>
-    public Vec3d PlayerPos => Walk && Body != null ? Body.PosD : PosD;
+    /// <summary>Véhicule conduit (voiture, vélo, bateau, avion), sinon null.</summary>
+    public Vehicle Vehicle { get; private set; }
+    double _sinceMouse = 10;  // secondes depuis le dernier mouvement de souris (la caméra revient derrière le véhicule)
+    double _vehicleZoom = 1;  // molette en conduite : distance de la caméra
+
+    /// <summary>Position du joueur : le véhicule conduit, le personnage en mode marche, sinon la caméra.</summary>
+    public Vec3d PlayerPos => Vehicle != null ? Vehicle.PosD : Walk && Body != null ? Body.PosD : PosD;
 
     public double Altitude => PosD.Length() - Geo.Radius;
     public double GroundHeight { get; private set; }
@@ -41,6 +46,19 @@ public partial class FlyCamera : Camera3D
 
     public void Teleport(double lat, double lon, double heightAboveGround, double yawDeg, double pitchDeg)
     {
+        if (Vehicle is Plane plane && heightAboveGround > 30)
+        {
+            // En avion, on garde l'avion : il est replacé en vol au-dessus du lieu
+            double g = HeightProvider.SurfaceHeight(lat, lon);
+            var up = Geo.FromLatLon(lat, lon);
+            Geo.LocalFrame(up, out var e, out var n);
+            double y = yawDeg * Math.PI / 180;
+            plane.PlaceInAir(up * (Geo.Radius + g + heightAboveGround), n * Math.Cos(y) + e * Math.Sin(y), 55);
+            Yaw = y; Pitch = plane.CameraPitch;
+            FollowVehicle(0);
+            return;
+        }
+        if (Vehicle != null) { LeaveVehicle(true); }
         if (Walk && Body != null)
         {
             // En marche, on pose le personnage au sol et la caméra se place derrière lui
@@ -62,6 +80,13 @@ public partial class FlyCamera : Camera3D
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
             if (mb.ButtonIndex == MouseButton.Left) Input.MouseMode = Input.MouseModeEnum.Captured;
+            if (Vehicle != null)
+            {
+                // en conduite, la molette rapproche / éloigne la caméra
+                if (mb.ButtonIndex == MouseButton.WheelUp) _vehicleZoom = Math.Max(0.3, _vehicleZoom / 1.15);
+                if (mb.ButtonIndex == MouseButton.WheelDown) _vehicleZoom = Math.Min(6, _vehicleZoom * 1.15);
+                return;
+            }
             bool zoom = Walk && Body != null && ThirdPerson; // en vue arrière, la molette rapproche / éloigne la caméra
             if (mb.ButtonIndex == MouseButton.WheelUp) { if (zoom) CamDistance = Math.Max(1.5, CamDistance / 1.15); else SpeedMultiplier *= 1.25; }
             if (mb.ButtonIndex == MouseButton.WheelDown) { if (zoom) CamDistance = Math.Min(40, CamDistance * 1.15); else SpeedMultiplier /= 1.25; }
@@ -69,8 +94,9 @@ public partial class FlyCamera : Camera3D
         else if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
         {
             Yaw += mm.Relative.X * 0.0025;
+            _sinceMouse = 0;
             // En vue arrière, on limite pour ne pas passer sous le personnage ni à la verticale
-            bool tp = Walk && Body != null && ThirdPerson;
+            bool tp = (Walk && Body != null && ThirdPerson) || Vehicle != null;
             Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025, tp ? -1.35 : -1.55, tp ? 0.7 : 1.55);
         }
         else if (e is InputEventKey k && k.Pressed && !k.Echo)
@@ -78,7 +104,7 @@ public partial class FlyCamera : Camera3D
             switch (k.PhysicalKeycode)
             {
                 case Key.Escape: Input.MouseMode = Input.MouseModeEnum.Visible; break;
-                case Key.F: SetWalk(!Walk); break;
+                case Key.F: if (Vehicle == null) SetWalk(!Walk); break;
                 case Key.V: ThirdPerson = !ThirdPerson; if (ThirdPerson) Pitch = Math.Clamp(Pitch, -1.35, 0.7); break;
                 case Key.Key1: Teleport(46.70, 7.80, 1500, 120, -12); break;   // Interlaken, vers l'Eiger
                 case Key.Key2: Teleport(46.03, 7.70, 600, 200, 5); break;     // Zermatt, vers le Cervin
@@ -106,6 +132,7 @@ public partial class FlyCamera : Camera3D
 
     public override void _Process(double delta)
     {
+        if (Vehicle != null) { ProcessDrive(delta); return; }
         if (Walk && Body != null) { ProcessWalk(delta); return; }
 
         var up = PosD.Normalized();
@@ -168,6 +195,27 @@ public partial class FlyCamera : Camera3D
         FollowBody();
     }
 
+    /// <summary>Position de caméra à <paramref name="distance"/> m derrière <paramref name="target"/>, selon le cap et
+    /// l'inclinaison de la caméra ; rapprochée si une pente se trouve entre les deux.</summary>
+    Vec3d Chase(Vec3d target, double distance)
+    {
+        var up = target.Normalized();
+        Geo.LocalFrame(up, out var east, out var north);
+        var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
+        var look = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
+        double dist = distance;
+        const int samples = 10;
+        for (int i = 1; i <= samples; i++)
+        {
+            double d = distance * i / samples;
+            if (AboveGround(target - look * d) < 0.4) { dist = Math.Max(0.6, distance * (i - 1) / samples); break; }
+        }
+        var pos = target - look * dist;
+        double above = AboveGround(pos);
+        if (above < 0.4) pos = pos.Normalized() * (pos.Length() + 0.4 - above);
+        return pos;
+    }
+
     /// <summary>Place la caméra derrière le personnage (ou dans ses yeux) puis positionne le personnage à l'écran.</summary>
     void FollowBody()
     {
@@ -175,21 +223,8 @@ public partial class FlyCamera : Camera3D
         Vec3d? target = null;
         if (ThirdPerson)
         {
-            Geo.LocalFrame(up, out var east, out var north);
-            var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
-            var look = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
             var head = Body.PosD + up * LookHeight;
-            // Si une pente se trouve entre le personnage et la caméra, on rapproche la caméra
-            double dist = CamDistance;
-            const int samples = 10;
-            for (int i = 1; i <= samples; i++)
-            {
-                double d = CamDistance * i / samples;
-                if (AboveGround(head - look * d) < 0.4) { dist = Math.Max(0.6, CamDistance * (i - 1) / samples); break; }
-            }
-            PosD = head - look * dist;
-            double above = AboveGround(PosD);
-            if (above < 0.4) PosD = PosD.Normalized() * (PosD.Length() + 0.4 - above);
+            PosD = Chase(head, CamDistance);
             target = head;
         }
         else PosD = Body.PosD + up * EyeHeight;
@@ -207,6 +242,85 @@ public partial class FlyCamera : Camera3D
         return p.Length() - Geo.Radius - HeightProvider.SurfaceHeight(lat, lon);
     }
 
+    // --- Conduite
+
+    /// <summary>Conduite : clavier → commandes du véhicule, puis caméra de poursuite.</summary>
+    void ProcessDrive(double delta)
+    {
+        bool keys = !InputBlocked;
+        var input = new VehicleInput();
+        if (keys)
+        {
+            if (Input.IsPhysicalKeyPressed(Key.W)) input.Throttle += 1;   // Z en AZERTY
+            if (Input.IsPhysicalKeyPressed(Key.S)) input.Throttle -= 1;
+            if (Input.IsPhysicalKeyPressed(Key.D)) input.Steer += 1;
+            if (Input.IsPhysicalKeyPressed(Key.A)) input.Steer -= 1;      // Q en AZERTY
+            if (Input.IsPhysicalKeyPressed(Key.Right)) input.Rudder += 1;
+            if (Input.IsPhysicalKeyPressed(Key.Left)) input.Rudder -= 1;
+            input.Boost = input.ThrottleUp = Input.IsPhysicalKeyPressed(Key.Shift);
+            input.ThrottleDown = Input.IsPhysicalKeyPressed(Key.Ctrl);
+            input.Brake = Input.IsPhysicalKeyPressed(Key.Space);
+        }
+        if (AutoForward) { if (Vehicle is Plane) input.ThrottleUp = true; else input.Throttle = 1; }
+        Vehicle.Step(input, Math.Min(delta, 0.25)); // images très lentes : on ralentit plutôt que de sauter des obstacles
+        Speed = Math.Abs(Vehicle.Speed);
+        Grounded = Vehicle is not Plane p || p.OnGround;
+        FollowVehicle(delta);
+    }
+
+    /// <summary>Caméra derrière le véhicule ; sans mouvement de souris, elle revient doucement dans l'axe.</summary>
+    void FollowVehicle(double delta)
+    {
+        _sinceMouse += delta;
+        var target = Vehicle.CameraTarget;
+        if (_sinceMouse > 1.5)
+        {
+            double diff = Math.IEEERemainder(Vehicle.HeadingYaw - Yaw, 2 * Math.PI);
+            Yaw += diff * Math.Min(1, delta * 3);
+            double pitch = Vehicle.CameraPitch;
+            if (Vehicle is Plane) pitch += 0.6 * Math.Asin(Math.Clamp(Vehicle.Fwd.Dot(Vehicle.PosD.Normalized()), -1, 1));
+            Pitch += (pitch - Pitch) * Math.Min(1, delta * 2);
+        }
+        PosD = Chase(target, Vehicle.CameraDistance * _vehicleZoom);
+        Geo.ToLatLon(PosD.Normalized(), out double lat, out double lon);
+        GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
+        UpdateTransform(target);
+        Vehicle.Place(PosD, WorldRotation);
+    }
+
+    /// <summary>Monte dans un véhicule (le personnage disparaît, il est assis dedans).</summary>
+    public void EnterVehicle(Vehicle v)
+    {
+        if (Vehicle != null) LeaveVehicle(true);
+        Vehicle = v;
+        v.Occupied = true;
+        Walk = false;
+        if (Body != null) Body.Visible = false;
+        Yaw = v.HeadingYaw;
+        Pitch = v.CameraPitch;
+        _sinceMouse = 10;
+        _vehicleZoom = 1;
+        FollowVehicle(0);
+    }
+
+    /// <summary>Descend du véhicule (à l'arrêt, sauf si <paramref name="force"/>) : le personnage apparaît à côté, en marche.</summary>
+    public bool LeaveVehicle(bool force = false)
+    {
+        if (Vehicle == null || (!force && !Vehicle.CanExit)) return false;
+        var v = Vehicle;
+        Vehicle = null;
+        v.Occupied = false;
+        Speed = 0;
+        if (Body == null) return true;
+        Geo.ToLatLon(v.ExitPoint.Normalized(), out double lat, out double lon);
+        Walk = true;
+        Body.PlaceOnGround(lat, lon, v.HeadingYaw);
+        Yaw = Body.Yaw;
+        Pitch = ThirdPerson ? ThirdPersonPitch : 0;
+        FollowBody();
+        return true;
+    }
+
     /// <summary>
     /// Passe en marche (F) : le personnage apparaît sous la caméra. Proche du sol, il tombe depuis la caméra ;
     /// plus haut, il est posé directement au sol (pas de chute de plusieurs kilomètres).
@@ -214,6 +328,7 @@ public partial class FlyCamera : Camera3D
     /// </summary>
     public void SetWalk(bool walk)
     {
+        if (Vehicle != null) LeaveVehicle(true);
         Walk = walk;
         if (Body == null) return;
         Body.Visible = false;

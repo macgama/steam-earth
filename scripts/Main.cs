@@ -25,6 +25,8 @@ public partial class Main : Node3D
     PlacesLayer _places;
     BuildingsLayer _buildings;
     StartMenu _start;
+    VehicleManager _vehicles;
+    string _spawnVehicle;
     TransitLayer _transit;
     StreetNamesLayer _streets;
     Label _credits;
@@ -95,6 +97,8 @@ public partial class Main : Node3D
         _start = new StartMenu { Name = "StartMenu", Camera = _camera, Buildings = _buildings };
         AddChild(_start);
         _buildings.Start = _start;
+        _vehicles = new VehicleManager { Name = "Vehicles", Camera = _camera, Weather = _weather, Atmosphere = _atmosphere };
+        AddChild(_vehicles);
         _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
 
         var layer = new CanvasLayer();
@@ -128,6 +132,8 @@ public partial class Main : Node3D
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
+            // --vehicle=car|bike|boat|plane : fait apparaître un véhicule et monte dedans (tests)
+            if (a.StartsWith("--vehicle=")) { _spawnVehicle = a.Substring(10); startMenu = false; }
             if (a == "--fp") _camera.ThirdPerson = false;           // marche à la première personne
             if (a.StartsWith("--pitch=")) pitch = double.Parse(a.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
             if (a.StartsWith("--country=")) _gotoCountry = a.Substring(10);
@@ -151,6 +157,7 @@ public partial class Main : Node3D
         _camera._UnhandledInput(key);
         if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
         if (walk) _camera.SetWalk(true);
+        if (_spawnVehicle != null) CallDeferred(MethodName.SpawnTestVehicle);
         if (pitch is double pd) _camera.Pitch = pd * Math.PI / 180; // inclinaison de la caméra (tests)
         if (_gotoCountry != null)
         {
@@ -161,6 +168,12 @@ public partial class Main : Node3D
         if (startMenu) _start.CallDeferred(StartMenu.MethodName.Open, true);
     }
 
+    void SpawnTestVehicle()
+    {
+        var kind = _spawnVehicle switch { "bike" => VehicleKind.Bike, "boat" => VehicleKind.Boat, "plane" => VehicleKind.Plane, _ => VehicleKind.Car };
+        _vehicles.Spawn(kind);
+    }
+
     public override void _Process(double delta)
     {
         _frames++;
@@ -168,7 +181,8 @@ public partial class Main : Node3D
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
-        double ground = _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
+        double ground = _camera.Vehicle != null ? Vehicle.Ground(_camera.Vehicle.PosD, out _)
+            : _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
         var w = _atmosphere.Current;
         var utc = _atmosphere.GameUtc;
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
@@ -185,8 +199,9 @@ public partial class Main : Node3D
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
+            (_camera.Vehicle != null ? _camera.Vehicle.Hud() + "\n" : "") +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  G véhicules (E monter / descendre)";
 
         if (_shotPath != null)
         {
@@ -195,7 +210,7 @@ public partial class Main : Node3D
             {
                 _camera.AutoForward = true;
                 _walkTest--;
-                if (_walkTest % 10 == 0) GD.Print($"[Test] marche : {lat:F6} {lon:F6} obstacles {Obstacles.Count}");
+                if (_walkTest % 10 == 0) GD.Print($"[Test] {(_camera.Vehicle != null ? _camera.Vehicle.Hud() : "marche")} : {lat:F6} {lon:F6} obstacles {Obstacles.Count} FPS {Engine.GetFramesPerSecond()}");
                 return;
             }
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000)

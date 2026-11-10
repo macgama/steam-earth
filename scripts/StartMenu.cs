@@ -174,7 +174,7 @@ public partial class StartMenu : CanvasLayer
             Geo.ToLatLon(Camera.PlayerPos.Normalized(), out double la, out double lo);
             _saved = new SavedPos { Lat = la, Lon = lo, Height = Math.Max(0, Camera.Altitude - Camera.GroundHeight), Yaw = Camera.Yaw * 180 / Math.PI };
         }
-        if (Camera.Walk) Camera.SetWalk(false);
+        if (Camera.Walk || Camera.Vehicle != null) Camera.SetWalk(false);
         Geo.ToLatLon(Camera.PlayerPos.Normalized(), out _lookLat, out _lookLon);
         _lookHeight = OrbitHeight;
         Look();
