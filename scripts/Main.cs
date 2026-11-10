@@ -20,11 +20,13 @@ public partial class Main : Node3D
     Weather _weather;
     Atmosphere _atmosphere;
     string _shotPath;
+    static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
     int _frames, _idleFrames;
 
     public override void _Ready()
     {
         HeightProvider.Init();
+        TimeZones.Init();
 
         _camera = new FlyCamera { Name = "Camera" };
         AddChild(_camera);
@@ -77,19 +79,15 @@ public partial class Main : Node3D
         _camera._UnhandledInput(key);
     }
 
-    double _cameraLon()
-    {
-        Geo.ToLatLon(_camera.PosD.Normalized(), out _, out double lon);
-        return lon;
-    }
-
     public override void _Process(double delta)
     {
         _frames++;
         double alt = _camera.Altitude;
         var w = _atmosphere.Current;
         var utc = _atmosphere.GameUtc;
-        double solarH = ((utc.TimeOfDay.TotalHours + _cameraLon() / 15) % 24 + 24) % 24;
+        Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
+        double solarH = ((utc.TimeOfDay.TotalHours + camLon / 15) % 24 + 24) % 24;
+        var local = TimeZones.LocalTime(utc, camLat, camLon, out string zone, out TimeSpan offset, out bool dst);
         string precip = w.PrecipMmH < 0.1 ? "pas de précipitations" : $"{(w.FrozenFraction > 0.5 || w.TemperatureC < 0.5 ? "neige" : "pluie")} {w.PrecipMmH:F1} mm/h";
 
         Geo.ToLatLon(_camera.PosD.Normalized(), out double lat, out double lon);
@@ -98,10 +96,10 @@ public partial class Main : Node3D
             $"Altitude {alt:N0} m   Sol {_camera.GroundHeight:N0} m   Hauteur {alt - _camera.GroundHeight:N0} m\n" +
             $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? "[MARCHE]" : "")}\n" +
             $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks}   en construction {_planet.PendingBuilds}   tuiles 30 m chargées {HeightProvider.LoadedTiles}/{HeightProvider.AvailableTiles}\n" +
-            $"{utc:dd.MM.yyyy HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire locale {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}°\n" +
+            $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher  1-5 lieux  +/− heure  R heure réelle";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher  1-9 lieux  +/− heure  R heure réelle";
 
         if (_shotPath != null)
         {

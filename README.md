@@ -23,7 +23,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | Maj | vitesse ×8 |
 | Molette | multiplicateur de vitesse |
 | F | mode marche (collé au sol, 1,7 m) |
-| 1 à 5 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya |
+| 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
 | R | revenir à l'heure réelle |
 
@@ -55,6 +55,21 @@ Le jeu est synchronisé avec la réalité : **heure UTC réelle** (position du S
   poussées par le vent réel, couverture nuageuse mondiale vue de l'espace, pluie et neige.
 - Pour les véhicules : `WeatherSample.WindAt(hauteur)` donne le vent (est, nord) en m/s.
 
+### Fuseaux horaires
+
+Le jour et la nuit dépendent de la vraie position du Soleil, donc de l'heure UTC et du lieu. L'**heure légale locale**
+(fuseau, heure d'été) est donnée par `TimeZones.cs` :
+
+- `data/timezones/timezones.bin.gz` (~750 Ko) : carte mondiale des 444 fuseaux IANA à 0,025° (~2,8 km), océans compris,
+  générée par `tools/timezones/build_timezones.py` à partir de
+  [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder) (version 2026b).
+- Les règles (décalage, dates d'heure d'été) viennent de la base IANA du système via .NET `TimeZoneInfo`,
+  donc restent à jour avec Windows/macOS/Linux.
+- `TimeZones.LocalTime(utc, lat, lon, …)` est utilisable partout dans le jeu (horaires, PNJ, éclairage public…).
+
+Pour mettre à jour la carte quand une nouvelle version sort :
+`python build_timezones.py combined-with-oceans.json ../../data/timezones/timezones.bin.gz 0.025`.
+
 | Ciel réel sur Interlaken | Nuages GFS sur l'Europe | Terminateur jour/nuit |
 |---|---|---|
 | ![](docs/meteo-interlaken.jpg) | ![](docs/meteo-europe.jpg) | ![](docs/meteo-crepuscule.jpg) |
@@ -70,6 +85,7 @@ Après la fusion dans `main`, lancer une première fois le workflow à la main :
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
+| `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 
 Couverture actuelle en 30 m : 45–48°N, 5–11°E (Suisse et alentours).
 
