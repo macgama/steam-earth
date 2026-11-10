@@ -42,6 +42,7 @@ public partial class Main : Node3D
         LandCover.Init();
         TimeZones.Init();
         Geography.Init();
+        NightLights.Init();
         Overture.Init(System.IO.Path.Combine(OS.GetUserDataDir(), "cache", "overture"));
 
         _camera = new FlyCamera { Name = "Camera" };
@@ -104,7 +105,7 @@ public partial class Main : Node3D
         _hud.AddThemeConstantOverride("outline_size", 4);
         layer.AddChild(_hud);
         // Mention obligatoire des données OpenStreetMap (licence ODbL)
-        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM", HorizontalAlignment = HorizontalAlignment.Right };
+        _credits = new Label { Text = Overture.Attribution + ", OurAirports, " + BuildingsLayer.Attribution + ", ESA WorldCover 2021 (CC BY 4.0), Copernicus DEM, NASA Black Marble", HorizontalAlignment = HorizontalAlignment.Right };
         _credits.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomRight, Control.LayoutPresetMode.KeepSize, 10);
         _credits.GrowHorizontal = Control.GrowDirection.Begin;
         _credits.GrowVertical = Control.GrowDirection.Begin;
@@ -167,6 +168,7 @@ public partial class Main : Node3D
     {
         _frames++;
         _hud.Visible = !_start.IsOpen;
+        _planet.SunDirWorld = _sun.GlobalTransform.Basis.Z.Normalized();
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
