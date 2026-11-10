@@ -30,6 +30,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | R | revenir à l'heure réelle |
 | Tab (ou bouton « Pays ») | menu des pays : clic = 500 m au-dessus de la capitale, recherche par nom |
 | B | afficher / masquer frontières et capitales |
+| T | afficher / masquer routes, chemins et voies ferrées |
+| N | afficher / masquer les noms des villes et villages |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -100,6 +102,35 @@ Après la fusion dans `main`, lancer une première fois le workflow à la main :
 |---|---|---|
 | ![](docs/menu-pays.jpg) | ![](docs/capitale-berne.jpg) | ![](docs/frontiere-leman.jpg) |
 
+## Routes, chemins, voies ferrées, villes et villages
+
+Toutes les routes, tous les chemins et toutes les voies ferrées du monde, ainsi que les noms de toutes les villes,
+villages et hameaux, viennent d'**OpenStreetMap**, via les tuiles vectorielles mondiales publiées chaque mois par
+**Overture Maps** sur AWS Open Data (archives PMTiles : `transportation` 134 Go, `divisions` 20 Go). Comme pour le relief,
+rien n'est dans le dépôt : le jeu ne télécharge (requêtes HTTP partielles) que les tuiles autour du joueur et les garde
+dans `user://cache/overture/`.
+
+- `Data/PmTiles.cs` : lecteur PMTiles v3 (répertoires, courbe de Hilbert, cache disque) ; `Data/Mvt.cs` : décodeur de
+  tuiles vectorielles (protobuf) ; `Data/Overture.cs` : trouve la version la plus récente (les anciennes sont supprimées
+  du serveur) et garde la liste en cache pour jouer hors ligne.
+- `RoadLayer.cs` + `RoadBuilder.cs` : jusqu'à ~3 km (5 km en altitude), tuiles de zoom 14 avec **tous les tronçons** en
+  rubans de leur vraie largeur (largeur OSM si connue), posés sur le relief 30 m : autoroutes, routes, rues, chemins
+  agricoles, sentiers, escaliers, voies ferrées (ballast + deux rails), trams, funiculaires. Les **ponts** sont tendus
+  entre leurs culées, les **tunnels** et voies souterraines ne sont pas dessinés. Au-delà, jusqu'à ~20–60 km : tuiles
+  de zoom 12 en lignes fines, masquées là où le détail est chargé.
+- `PlacesLayer.cs` : noms des localités (villes, villes moyennes, villages, hameaux), en français quand OSM le connaît
+  (Genève, Lucerne, Munich…). Plus le lieu est petit, plus il faut s'approcher : hameaux à 4 km, villages à 12 km,
+  villes moyennes à 35 km, grandes villes jusqu'à 1 000 km. Les capitales gardent leur étiquette ◆.
+- La mention **« © contributeurs OpenStreetMap (ODbL), Overture Maps Foundation »** est affichée en bas à droite de
+  l'écran : elle est obligatoire (licence ODbL) et devra aussi figurer dans les crédits du jeu.
+
+| Interlaken depuis 350 m | Sentiers du Harder | À pied sur un chemin |
+|---|---|---|
+| ![](docs/routes-interlaken.jpg) | ![](docs/chemins-harder.jpg) | ![](docs/marche-route.jpg) |
+
+Pour la version commerciale, il sera plus sûr de copier les deux archives sur un serveur à nous (ou un CDN) plutôt que
+de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -112,6 +143,7 @@ Après la fusion dans `main`, lancer une première fois le workflow à la main :
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
+| Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
 Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
 Les tuiles locales `data/detail/` (45–48°N, 5–11°E) servent de version hors ligne pour la Suisse.
@@ -144,3 +176,4 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 - Atmosphère : ciel procédural Godot → diffusion atmosphérique vue de l'espace.
 - Collisions physiques pour les véhicules (colliders générés pour les chunks proches).
 - Rivières plus fines (OpenStreetMap / HydroRIVERS).
+- Routes : rubans posés sur le relief, sans aplanir le terrain ni collisions pour les véhicules ; noms de rues pas encore affichés.
