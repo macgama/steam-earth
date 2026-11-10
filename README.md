@@ -24,6 +24,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | Molette | multiplicateur de vitesse |
 | F | mode marche (collé au sol, 1,7 m) |
 | 1 à 5 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya |
+| + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
+| R | revenir à l'heure réelle |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -37,6 +39,29 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
   tourné pour que la verticale locale soit l'axe Y (le ciel, le brouillard et la physique Godot restent corrects partout).
 - **Altitudes** (`HeightProvider.cs`) : carte mondiale ~10 km + tuiles 1°×1° à 30 m chargées à la demande.
 
+## Météo et heure réelles
+
+Le jeu est synchronisé avec la réalité : **heure UTC réelle** (position du Soleil calculée, jour/nuit) et
+**météo réelle** issue du modèle **NOAA GFS** (domaine public, usage commercial autorisé).
+
+- `tools/weather/build_weather.py` télécharge sur AWS Open Data la dernière prévision GFS 1°
+  (vent à 10 m et ~1 500 m, rafales, température, nuages bas/moyens/hauts, pluie, part de neige, visibilité)
+  pour les 27 prochaines heures, et l'écrit dans un fichier compact (~3 Mo).
+- Le workflow GitHub Actions `.github/workflows/weather.yml` le régénère **toutes les 6 h** et le publie dans la
+  release `weather-latest` : c'est le « serveur météo », gratuit.
+- Le jeu (`Weather.cs`) télécharge ce fichier au démarrage puis toutes les 30 min, le garde en cache, et interpole
+  dans l'espace et le temps. Sans connexion, il utilise le cache ou `data/weather/fallback.bin.gz`.
+- `Atmosphere.cs` en fait : soleil et ciel jour/nuit/couvert, brouillard selon la visibilité, trois couches de nuages
+  poussées par le vent réel, couverture nuageuse mondiale vue de l'espace, pluie et neige.
+- Pour les véhicules : `WeatherSample.WindAt(hauteur)` donne le vent (est, nord) en m/s.
+
+| Ciel réel sur Interlaken | Nuages GFS sur l'Europe | Terminateur jour/nuit |
+|---|---|---|
+| ![](docs/meteo-interlaken.jpg) | ![](docs/meteo-europe.jpg) | ![](docs/meteo-crepuscule.jpg) |
+
+Après la fusion dans `main`, lancer une première fois le workflow à la main :
+*Actions → Météo GFS → Run workflow*.
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -44,6 +69,7 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
 | `data/world_base.hgt.gz` | Tuiles Terrarium (AWS Open Data : SRTM, GMTED, ETOPO1…), avec bathymétrie | ~10 km |
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
+| Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 
 Couverture actuelle en 30 m : 45–48°N, 5–11°E (Suisse et alentours).
 
