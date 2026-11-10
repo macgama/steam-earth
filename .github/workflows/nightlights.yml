@@ -1,0 +1,35 @@
+# Construit la carte des lumières nocturnes (NASA Black Marble) et la publie dans la release
+# « data-nightlights ». À relancer seulement si la source ou le format change.
+name: Lumières des villes
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - tools/nightlights/**
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/nightlights
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pillow
+      - run: python tools/nightlights/build_nightlights.py nightlights.bin.gz
+      - name: Publier dans la release data-nightlights
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data-nightlights >/dev/null 2>&1 || \
+            gh release create data-nightlights --title "Données : lumières des villes" \
+              --notes "NASA Black Marble 2016 (Suomi NPP VIIRS, domaine public), 8192×4096, format SENL. Générée par le workflow Lumières des villes." \
+              --latest=false
+          gh release upload data-nightlights nightlights.bin.gz --clobber
