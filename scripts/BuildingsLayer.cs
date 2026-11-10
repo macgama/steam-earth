@@ -29,6 +29,29 @@ public partial class BuildingsLayer : Node3D
     public CountryMenu Menu;
     public StartMenu Start;
     public float Night;                  // 0 = jour, 1 = nuit (fenêtres éclairées)
+    /// <summary>Heure locale (0–24) : la part de fenêtres allumées en dépend (soirée animée, nuit presque éteinte).</summary>
+    public double LocalHour = 20;
+    /// <summary>L'invite « on construit ? » n'apparaît qu'à plus de cette hauteur au-dessus du sol (pas en pleine ville).</summary>
+    public const double PromptMinHeight = 500;
+
+    // Part de fenêtres allumées selon l'heure locale (heure, part), interpolée
+    static readonly (double h, double f)[] LitByHour =
+    {
+        (0, 0.22), (1, 0.10), (2, 0.06), (5, 0.06), (6, 0.18), (7.5, 0.30), (9, 0.15),
+        (16, 0.15), (18, 0.45), (21, 0.55), (23, 0.38), (24, 0.22),
+    };
+
+    public static double LitFraction(double hour)
+    {
+        hour = ((hour % 24) + 24) % 24;
+        for (int i = 1; i < LitByHour.Length; i++)
+            if (hour <= LitByHour[i].h)
+            {
+                var (h0, f0) = LitByHour[i - 1]; var (h1, f1) = LitByHour[i];
+                return f0 + (f1 - f0) * (hour - h0) / (h1 - h0);
+            }
+        return LitByHour[^1].f;
+    }
 
     public const string Attribution = "bâtiments : OSM, Microsoft, Google Open Buildings (CC BY 4.0), USGS";
     const int Zoom = 14, MaxBuilds = 3;
@@ -235,6 +258,7 @@ public partial class BuildingsLayer : Node3D
                 Build(t);
         }
         _mat.SetShaderParameter("night", Night);
+        _mat.SetShaderParameter("lit_fraction", (float)LitFraction(LocalHour));
         UpdateHover();
     }
 
@@ -372,7 +396,8 @@ public partial class BuildingsLayer : Node3D
     void UpdateHover()
     {
         _hover = null;
-        if ((Menu != null && Menu.IsOpen) || (Start != null && Start.IsOpen)) { _prompt.Visible = false; return; }
+        if ((Menu != null && Menu.IsOpen) || (Start != null && Start.IsOpen)
+            || Camera.Altitude - Camera.GroundHeight < PromptMinHeight) { _prompt.Visible = false; return; }
         _targets.Clear();
         Places?.CollectTargets(_targets);
         Political?.CollectTargets(_targets);
@@ -422,7 +447,13 @@ public partial class BuildingsLayer : Node3D
 shader_type spatial;
 render_mode cull_disabled;
 uniform float night = 0.0;
-float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+uniform float lit_fraction = 0.5;
+// hachage sans sinus (précis même avec de grandes coordonnées : pas de grain dans les fenêtres)
+float hash(vec3 p) {
+    p = fract(mod(p, 4096.0) * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+}
 void fragment() {
     vec3 base = pow(COLOR.rgb, vec3(2.2));
     ROUGHNESS = 0.9;
@@ -437,8 +468,9 @@ void fragment() {
         vec3 glass = vec3(0.05, 0.065, 0.08);
         ALBEDO = mix(base, glass, m);
         ROUGHNESS = mix(0.9, 0.25, m);
-        float lit = step(0.55, hash(vec3(floor(cell), UV2.y * 97.0)));
-        EMISSION = vec3(1.0, 0.72, 0.38) * 1.6 * night * mix(win * lit, 0.2 * 0.45, blur);
+        // chaque fenêtre a sa valeur fixe : quand la part allumée baisse (nuit), ce sont toujours les mêmes qui s'éteignent
+        float lit = step(1.0 - lit_fraction, hash(vec3(floor(cell), floor(UV2.y * 997.0))));
+        EMISSION = vec3(1.0, 0.70, 0.36) * 0.9 * night * mix(win * lit, 0.2 * lit_fraction, blur);
     } else {
         ALBEDO = base;
     }

@@ -202,7 +202,22 @@ public partial class RoadLayer : Node3D
                 t.Mvt ??= await archive.GetTileAsync(t.Z, t.X, t.Y) ?? Array.Empty<byte>();
                 var layers = Mvt.Decode(t.Mvt, new HashSet<string> { "segment" }, RoadBuilder.Keys);
                 var segs = layers.TryGetValue("segment", out var s) ? s : new List<Mvt.Feature>();
-                data = t.Z == DetailZoom ? RoadBuilder.BuildDetailed(segs, t.Z, t.X, t.Y, spacing) : RoadBuilder.BuildOverview(segs, t.Z, t.X, t.Y);
+                // tuiles voisines (cache disque) pour recomposer les tronçons coupés qui ont des ponts ou des tunnels
+                var near = new Dictionary<(int, int), List<Mvt.Feature>>();
+                List<Mvt.Feature> Neighbour(int nx, int ny)
+                {
+                    if (near.TryGetValue((nx, ny), out var l)) return l;
+                    try
+                    {
+                        var b = archive.GetTileAsync(DetailZoom, nx, ny).GetAwaiter().GetResult();
+                        l = b == null ? new List<Mvt.Feature>()
+                            : Mvt.Decode(b, new HashSet<string> { "segment" }, RoadBuilder.Keys).GetValueOrDefault("segment") ?? new List<Mvt.Feature>();
+                    }
+                    catch (Exception) { l = null; } // hors ligne : le tronçon garde ses règles « entières » seulement
+                    near[(nx, ny)] = l;
+                    return l;
+                }
+                data = t.Z == DetailZoom ? RoadBuilder.BuildDetailed(segs, t.Z, t.X, t.Y, spacing, Neighbour) : RoadBuilder.BuildOverview(segs, t.Z, t.X, t.Y);
             }
             catch (Exception e) { GD.PrintErr($"[RoadLayer] tuile {t.Z}/{t.X}/{t.Y} : {e.Message}"); }
             _done.Enqueue((t, data));

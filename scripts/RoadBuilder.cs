@@ -31,7 +31,7 @@ public sealed class RoadMeshData
 /// </summary>
 public static class RoadBuilder
 {
-    public static readonly HashSet<string> Keys = new() { "subtype", "class", "road_flags", "level_rules", "width_rules" };
+    public static readonly HashSet<string> Keys = new() { "id", "subtype", "class", "road_flags", "level_rules", "width_rules" };
 
     /// <summary>Largeur (m), couleur (sRGB), priorité d'affichage (les grandes routes passent dessus).</summary>
     readonly record struct Style(float Width, Color Color, int Priority, Surface Kind, bool Rail = false);
@@ -102,9 +102,10 @@ public static class RoadBuilder
             using var doc = JsonDocument.Parse(level);
             foreach (var r in doc.RootElement.EnumerateArray())
             {
-                if (!r.TryGetProperty("value", out var v) || v.GetDouble() >= 0) continue;
+                if (!r.TryGetProperty("value", out var v) || v.GetDouble() == 0) continue;
                 var range = Between(r);
-                if (range == null) wholeUnder = true; else tunnels.Add(range.Value);
+                if (v.GetDouble() < 0) { if (range == null) wholeUnder = true; else tunnels.Add(range.Value); }
+                else bridges.Add(range ?? new Range(0, 1)); // niveau surélevé = pont / viaduc
             }
         }
         var w = f.Str("width_rules");
@@ -146,7 +147,8 @@ public static class RoadBuilder
     /// <summary>Tuile détaillée (zoom 14) : rubans.</summary>
     /// <param name="spacing">précision du relief (m) : 1 près du joueur dans les zones haute définition (Suisse 0,5 m),
     /// plus grossier au loin, 10 ailleurs (Copernicus 30 m). Les rubans sont rééchantillonnés en conséquence.</param>
-    public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y, double spacing)
+    public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y, double spacing,
+        Func<int, int, List<Mvt.Feature>> neighbours = null)
     {
         var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
@@ -165,22 +167,32 @@ public static class RoadBuilder
             if (under) continue;
             var style = st.Value;
             float width = double.IsNaN(w) ? style.Width : (float)Math.Clamp(w, 1, 30);
-            // Les portions « between » se rapportent au tronçon entier : on ne s'y fie que s'il n'a pas été
-            // coupé par le bord de la tuile.
+            // Les portions « between » (ponts, tunnels) se rapportent au tronçon entier. S'il a été coupé par le bord
+            // de la tuile, on le recompose avec les morceaux des tuiles voisines pour savoir où tombe notre morceau.
             var p0 = f.Parts[0];
             bool whole = f.Parts.Count == 1 && InTile(p0[0], p0[1]) && InTile(p0[^2], p0[^1]);
-            if (!whole)
+            List<Piece> chain = null;
+            if (tunnels.Count > 0 || bridges.Count > 0)
             {
-                tunnels.Clear();
-                bool full = bridges.Exists(r => r.A <= 0 && r.B >= 1);
-                bridges.Clear();
-                if (full) bridges.Add(new Range(0, 1));
+                chain = whole ? new List<Piece> { MakePiece(z, x, y, p0, true) } : Stitch(f, z, x, y, neighbours);
+                if (chain != null) Order(chain);
+                else
+                {
+                    // tronçon impossible à recomposer : on ne garde que les règles valables sur toute sa longueur
+                    tunnels.Clear();
+                    bool full = bridges.Exists(r => r.A <= 0 && r.B >= 1);
+                    bridges.Clear();
+                    if (full) bridges.Add(new Range(0, 1));
+                }
             }
-            foreach (var part in f.Parts)
+            var decks = chain == null ? null : DeckHeights(chain, bridges, spacing, ref incomplete);
+            double total = chain == null ? 0 : chain[^1].Offset + chain[^1].Len;
+            var mine = chain == null ? f.Parts.ConvertAll(pp => (pp, 0.0)) : chain.FindAll(c => c.Mine).ConvertAll(c => (c.P, c.Offset));
+            foreach (var (part, offset) in mine)
             {
                 if (part.Length < 4) continue;
                 data.Segments++;
-                var line = BuildLine(part, z, x, y, tunnels, bridges, spacing, Math.Clamp(spacing * 2, 2, 8), ref incomplete);
+                var line = BuildLine(part, z, x, y, offset, total, tunnels, bridges, decks, spacing, Math.Clamp(spacing * 2, 2, 8), ref incomplete);
                 float lift = Lift + style.Priority * 0.04f;
                 foreach (var run in line)
                 {
@@ -210,8 +222,11 @@ public static class RoadBuilder
     static Color Shade(Color c, float k) => new(c.R * k, c.G * k, c.B * k);
 
     /// <summary>Polyligne → suites de points (direction, hauteur) rééchantillonnées, coupées aux tunnels.</summary>
-    static List<List<(Vec3d dir, double h)>> BuildLine(double[] part, int z, int x, int y, List<Range> tunnels, List<Range> bridges,
-        double spacing, double step, ref bool incomplete)
+    /// <param name="offset">distance (m) entre le début du tronçon complet et le début de ce morceau</param>
+    /// <param name="total">longueur du tronçon complet (m) ; 0 = ce morceau seul</param>
+    /// <param name="decks">hauteur des culées de chaque pont (même ordre que <paramref name="bridges"/>)</param>
+    static List<List<(Vec3d dir, double h)>> BuildLine(double[] part, int z, int x, int y, double offset, double total,
+        List<Range> tunnels, List<Range> bridges, (double a, double b)[] decks, double spacing, double step, ref bool incomplete)
     {
         int n = part.Length / 2;
         var dirs = new Vec3d[n];
@@ -221,7 +236,8 @@ public static class RoadBuilder
             dirs[i] = Dir(z, x, y, part[2 * i], part[2 * i + 1]);
             if (i > 0) cum[i] = cum[i - 1] + (dirs[i] - dirs[i - 1]).Length() * Geo.Radius;
         }
-        double total = Math.Max(cum[n - 1], 1e-6);
+        if (total <= 0) { offset = 0; total = cum[n - 1]; }
+        total = Math.Max(total, 1e-6);
         // Points rééchantillonnés avec leur position relative (0..1) le long du tronçon
         var pts = new List<(Vec3d dir, double t)>();
         for (int i = 0; i < n; i++)
@@ -233,28 +249,36 @@ public static class RoadBuilder
                 for (int s = 1; s < steps; s++)
                 {
                     double a = (double)s / steps;
-                    pts.Add(((dirs[i - 1] * (1 - a) + dirs[i] * a).Normalized(), (cum[i - 1] + len * a) / total));
+                    pts.Add(((dirs[i - 1] * (1 - a) + dirs[i] * a).Normalized(), (offset + cum[i - 1] + len * a) / total));
                 }
             }
-            pts.Add((dirs[i], cum[i] / total));
+            pts.Add((dirs[i], (offset + cum[i]) / total));
         }
         var heights = new double[pts.Count];
         for (int i = 0; i < pts.Count; i++) heights[i] = Ground(pts[i].dir, spacing, ref incomplete);
 
-        // Ponts : tablier droit entre les deux culées (au-dessus de l'eau ou de la vallée)
-        foreach (var br in bridges)
+        // Ponts : tablier droit entre les deux culées (au-dessus de l'eau ou de la vallée). Les hauteurs des culées
+        // sont calculées une fois pour le tronçon entier : les morceaux voisins se raccordent.
+        for (int k = 0; k < bridges.Count; k++)
         {
-            int i0 = -1, i1 = -1;
-            for (int i = 0; i < pts.Count; i++)
-                if (pts[i].t >= br.A - 1e-6 && pts[i].t <= br.B + 1e-6) { if (i0 < 0) i0 = i; i1 = i; }
-            if (i0 < 0 || i1 <= i0) continue;
-            // pour un pont coupé par le bord de tuile, on garde au moins le relief de part et d'autre
-            double ha = heights[i0], hb = heights[i1];
-            double ta = pts[i0].t, tb = pts[i1].t;
-            for (int i = i0 + 1; i < i1; i++)
+            var br = bridges[k];
+            double ha, hb, ta = br.A, tb = br.B;
+            if (decks != null) (ha, hb) = decks[k];
+            else
             {
-                double a = (pts[i].t - ta) / Math.Max(tb - ta, 1e-9);
-                heights[i] = Math.Max(ha * (1 - a) + hb * a, heights[i] + 0.5);
+                // tronçon non recomposé (pont sur toute sa longueur) : culées = extrémités de ce morceau
+                int i0 = -1, i1 = -1;
+                for (int i = 0; i < pts.Count; i++)
+                    if (pts[i].t >= br.A - 1e-6 && pts[i].t <= br.B + 1e-6) { if (i0 < 0) i0 = i; i1 = i; }
+                if (i0 < 0 || i1 <= i0) continue;
+                ha = heights[i0]; hb = heights[i1]; ta = pts[i0].t; tb = pts[i1].t;
+            }
+            for (int i = 0; i < pts.Count; i++)
+            {
+                double t = pts[i].t;
+                if (t < ta || t > tb) continue;
+                double a = (t - ta) / Math.Max(tb - ta, 1e-9);
+                heights[i] = Math.Max(ha * (1 - a) + hb * a, heights[i] + 0.3);
             }
         }
 
@@ -268,6 +292,171 @@ public static class RoadBuilder
         }
         runs.RemoveAll(r => r.Count < 2);
         return runs;
+    }
+
+    // --- Recomposition d'un tronçon coupé par les bords de tuiles ---
+
+    /// <summary>Morceau d'un tronçon, découpé au carré de sa tuile (sans la marge), en coordonnées de tuile.</summary>
+    sealed class Piece
+    {
+        public double[] P;      // (x, y) en fraction de la tuile X, Y
+        public Vec3d[] D;       // mêmes points sur la sphère
+        public double Len, Offset;
+        public bool Mine;       // morceau de la tuile en cours de construction
+    }
+
+    const int MaxStitchTiles = 25;
+
+    static Piece MakePiece(int z, int x, int y, double[] p, bool mine)
+    {
+        int n = p.Length / 2;
+        var d = new Vec3d[n];
+        double len = 0;
+        for (int i = 0; i < n; i++)
+        {
+            d[i] = Dir(z, x, y, p[2 * i], p[2 * i + 1]);
+            if (i > 0) len += (d[i] - d[i - 1]).Length() * Geo.Radius;
+        }
+        return new Piece { P = p, D = d, Len = len, Mine = mine };
+    }
+
+    /// <summary>Rassemble les morceaux du même tronçon (même identifiant) dans les tuiles voisines, de proche en proche.
+    /// Null si une tuile manque ou si le tronçon est trop long.</summary>
+    static List<Piece> Stitch(Mvt.Feature f, int z, int x, int y, Func<int, int, List<Mvt.Feature>> neighbours)
+    {
+        string id = f.Str("id");
+        if (id == null || neighbours == null) return null;
+        int n = 1 << z;
+        var pieces = new List<Piece>();
+        var seen = new HashSet<(int, int)>();
+        var queue = new Queue<(int, int)>();
+        queue.Enqueue((x, y));
+        while (queue.Count > 0)
+        {
+            var (tx, ty) = queue.Dequeue();
+            if (!seen.Add((tx, ty))) continue;
+            if (seen.Count > MaxStitchTiles) return null;
+            bool own = tx == x && ty == y;
+            var feats = own ? new List<Mvt.Feature> { f } : neighbours(tx, ty);
+            if (feats == null) return null;
+            foreach (var g in feats)
+            {
+                if (!own && g.Str("id") != id) continue;
+                foreach (var part in g.Parts)
+                {
+                    if (part.Length < 4) continue;
+                    foreach (var c in ClipUnit(part)) pieces.Add(MakePiece(z, tx, ty, c, own));
+                    // une extrémité dans la marge : le tronçon continue dans la tuile voisine
+                    foreach (int e in new[] { 0, part.Length - 2 })
+                    {
+                        double px = part[e], py = part[e + 1];
+                        int dx = px < -1e-4 ? -1 : px > 1 + 1e-4 ? 1 : 0, dy = py < -1e-4 ? -1 : py > 1 + 1e-4 ? 1 : 0;
+                        if ((dx != 0 || dy != 0) && ty + dy >= 0 && ty + dy < n) queue.Enqueue(((tx + dx + n) % n, ty + dy));
+                    }
+                }
+            }
+        }
+        return pieces.Count > 0 ? pieces : null;
+    }
+
+    /// <summary>Met les morceaux bout à bout et calcule la distance de chacun depuis le début du tronçon.</summary>
+    static void Order(List<Piece> pieces)
+    {
+        double tol = 4.0 / Geo.Radius; // les morceaux de deux tuiles se touchent à ~1 m près (arrondi des tuiles)
+        var ordered = new List<Piece>();
+        var left = new List<Piece>(pieces);
+        // tête : le morceau dont le début ne prolonge aucun autre
+        Piece cur = left.Find(p => !left.Exists(q => q != p && (q.D[^1] - p.D[0]).Length() < tol)) ?? left[0];
+        while (cur != null)
+        {
+            left.Remove(cur);
+            ordered.Add(cur);
+            var end = cur.D[^1];
+            cur = left.Find(p => (p.D[0] - end).Length() < tol);
+        }
+        ordered.AddRange(left); // morceaux non raccordés (rare) : à la suite
+        double off = 0;
+        foreach (var p in ordered) { p.Offset = off; off += p.Len; }
+        pieces.Clear();
+        pieces.AddRange(ordered);
+    }
+
+    /// <summary>Découpe une polyligne (fractions de tuile) au carré [0, 1]² (Liang-Barsky).</summary>
+    static List<double[]> ClipUnit(double[] p)
+    {
+        var res = new List<double[]>();
+        List<double> cur = null;
+        for (int i = 0; i + 3 < p.Length; i += 2)
+        {
+            double x0 = p[i], y0 = p[i + 1], dx = p[i + 2] - x0, dy = p[i + 3] - y0;
+            double t0 = 0, t1 = 1;
+            bool ok = Clip(-dx, x0, ref t0, ref t1) && Clip(dx, 1 - x0, ref t0, ref t1)
+                   && Clip(-dy, y0, ref t0, ref t1) && Clip(dy, 1 - y0, ref t0, ref t1);
+            if (!ok) { if (cur != null) { res.Add(cur.ToArray()); cur = null; } continue; }
+            if (cur != null && t0 > 0) { res.Add(cur.ToArray()); cur = null; }
+            if (cur == null) { cur = new List<double> { x0 + t0 * dx, y0 + t0 * dy }; }
+            cur.Add(x0 + t1 * dx); cur.Add(y0 + t1 * dy);
+            if (t1 < 1) { res.Add(cur.ToArray()); cur = null; }
+        }
+        if (cur != null) res.Add(cur.ToArray());
+        return res;
+
+        static bool Clip(double q, double r, ref double t0, ref double t1)
+        {
+            if (Math.Abs(q) < 1e-15) return r >= 0;
+            double t = r / q;
+            if (q < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+            else { if (t < t0) return false; if (t < t1) t1 = t; }
+            return true;
+        }
+    }
+
+    /// <summary>Point du tronçon recomposé à <paramref name="m"/> mètres de son début.</summary>
+    static Vec3d PointAt(List<Piece> chain, double m)
+    {
+        foreach (var p in chain)
+        {
+            if (m > p.Offset + p.Len && p != chain[^1]) continue;
+            double r = Math.Clamp(m - p.Offset, 0, p.Len);
+            for (int i = 1; i < p.D.Length; i++)
+            {
+                double s = (p.D[i] - p.D[i - 1]).Length() * Geo.Radius;
+                if (r <= s || i == p.D.Length - 1)
+                {
+                    double a = s > 0 ? Math.Clamp(r / s, 0, 1) : 0;
+                    return (p.D[i - 1] * (1 - a) + p.D[i] * a).Normalized();
+                }
+                r -= s;
+            }
+        }
+        return chain[^1].D[^1];
+    }
+
+    /// <summary>Hauteur des deux culées de chaque pont. Les limites OSM tombent souvent un peu avant le haut du talus :
+    /// on remonte jusqu'à 30 m vers l'extérieur tant que le terrain monte.</summary>
+    static (double, double)[] DeckHeights(List<Piece> chain, List<Range> bridges, double spacing, ref bool incomplete)
+    {
+        double total = chain[^1].Offset + chain[^1].Len;
+        var res = new (double, double)[bridges.Count];
+        for (int k = 0; k < bridges.Count; k++)
+        {
+            res[k] = (Abutment(bridges[k].A * total, -1, ref incomplete), Abutment(bridges[k].B * total, +1, ref incomplete));
+        }
+        return res;
+
+        double Abutment(double m, int dir, ref bool inc)
+        {
+            double best = Ground(PointAt(chain, m), spacing, ref inc);
+            for (double d = 2; d <= 30; d += 2)
+            {
+                double mm = m + dir * d;
+                if (mm < 0 || mm > total) break;
+                double h = Ground(PointAt(chain, mm), spacing, ref inc);
+                if (h <= best + 0.02) break;
+                best = h;
+            }
+            return best;
+        }
     }
 
     static void Ribbon(List<(Vec3d dir, double h)> run, Vec3d origin, float left, float right, float lift, Color col, Surface kind, Geom g)
@@ -328,7 +517,7 @@ public static class RoadBuilder
             {
                 if (part.Length < 4) continue;
                 data.Segments++;
-                foreach (var run in BuildLine(part, z, x, y, none, none, 120, 16, ref incomplete))
+                foreach (var run in BuildLine(part, z, x, y, 0, 0, none, none, null, 120, 16, ref incomplete))
                     for (int i = 0; i + 1 < run.Count; i++)
                     {
                         // sous-tuile selon le milieu du segment
