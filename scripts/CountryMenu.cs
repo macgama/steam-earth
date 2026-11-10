@@ -10,6 +10,8 @@ namespace SteamEarth;
 public partial class CountryMenu : CanvasLayer
 {
     public FlyCamera Camera;
+    /// <summary>Appelé à l'arrivée dans un pays (la capitale y est construite).</summary>
+    public event Action<Country> Arrived;
     PanelContainer _panel;
     LineEdit _search;
     VBoxContainer _list;
@@ -36,7 +38,7 @@ public partial class CountryMenu : CanvasLayer
         box.AddThemeConstantOverride("separation", 6);
         _panel.AddChild(box);
 
-        var title = new Label { Text = $"Pays ({Geography.Countries.Count}) — clic : 500 m au-dessus de la capitale" };
+        var title = new Label { Text = $"Pays ({Geography.Countries.Count}) — clic : 500 m au-dessus de la capitale, qui est construite" };
         title.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         box.AddChild(title);
 
@@ -99,6 +101,7 @@ public partial class CountryMenu : CanvasLayer
         Geo.ToLatLon(p.Normalized(), out double lat, out double lon);
         Camera.Teleport(lat, lon, 500 + HeightProvider.SurfaceHeight(c.Lat, c.Lon, 30) - HeightProvider.SurfaceHeight(lat, lon, 30), 0, -18);
         GD.Print($"[CountryMenu] {c} → {c.Lat:F4}, {c.Lon:F4}");
+        Arrived?.Invoke(c);
         if (_panel.Visible) Toggle();
     }
 
