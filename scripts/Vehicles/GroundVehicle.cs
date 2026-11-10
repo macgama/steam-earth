@@ -190,7 +190,7 @@ public partial class GroundVehicle : Vehicle
     {
         var palette = new[] { new Color(0.75f, 0.1f, 0.1f), new Color(0.12f, 0.28f, 0.62f), new Color(0.9f, 0.9f, 0.88f), new Color(0.2f, 0.2f, 0.22f), new Color(0.15f, 0.45f, 0.3f) };
         var paint = Mat(palette[(int)(GD.Randi() % palette.Length)], 0.35f, 0.4f);
-        var glass = new StandardMaterial3D { AlbedoColor = new Color(0.12f, 0.16f, 0.2f, 0.55f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, Roughness = 0.1f, Metallic = 0.3f };
+        var glass = new StandardMaterial3D { AlbedoColor = new Color(0.12f, 0.16f, 0.2f, 0.7f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, Roughness = 0.1f, Metallic = 0.3f };
         var tyre = Mat(new Color(0.06f, 0.06f, 0.06f), 0.9f);
         var rim = Mat(new Color(0.7f, 0.7f, 0.72f), 0.3f, 0.8f);
         var light = new StandardMaterial3D { AlbedoColor = new Color(1, 0.97f, 0.85f), EmissionEnabled = true, Emission = new Color(1, 0.95f, 0.8f), EmissionEnergyMultiplier = 1.5f };
@@ -200,6 +200,10 @@ public partial class GroundVehicle : Vehicle
         Part(new BoxMesh { Size = new Vector3(1.74f, 0.62f, 4.1f) }, paint, new Vector3(0, 0.62f, 0));            // caisse
         Part(new BoxMesh { Size = new Vector3(1.6f, 0.56f, 2.1f) }, glass, new Vector3(0, 1.21f, 0.25f));          // vitres
         Part(new BoxMesh { Size = new Vector3(1.62f, 0.06f, 1.9f) }, paint, new Vector3(0, 1.5f, 0.3f));           // toit
+        // montants avant, milieu et arrière : le toit tient sur la caisse au lieu de flotter au-dessus des vitres
+        foreach (float x in new[] { -0.78f, 0.78f })
+            foreach (float zp in new[] { -0.72f, 0.25f, 1.22f })
+                Part(new BoxMesh { Size = new Vector3(0.07f, 0.56f, zp == 0.25f ? 0.1f : 0.14f) }, paint, new Vector3(x, 1.21f, zp));
         Part(new BoxMesh { Size = new Vector3(1.78f, 0.18f, 0.12f) }, dark, new Vector3(0, 0.42f, -2.06f));        // pare-chocs
         Part(new BoxMesh { Size = new Vector3(1.78f, 0.18f, 0.12f) }, dark, new Vector3(0, 0.42f, 2.06f));
         Part(new BoxMesh { Size = new Vector3(0.36f, 0.12f, 0.05f) }, light, new Vector3(-0.62f, 0.72f, -2.06f));  // phares

@@ -90,6 +90,7 @@ public static class BuildingBuilder
                     Emit(f, true, z, tx, ty, areas, spacing, data, m, ref incomplete);
                 }
         }
+        FrontFaces(m);
         data.Vertices = m.V.ToArray(); data.Normals = m.N.ToArray(); data.Colors = m.C.ToArray();
         data.Uv = m.Uv.ToArray(); data.Uv2 = m.Uv2.ToArray(); data.Indices = m.I.ToArray();
         data.Footprints = m.Obs;
@@ -306,6 +307,19 @@ public static class BuildingBuilder
         };
         float v = (float)(Hash(seed * 91.7) - 0.5) * 0.10f;
         return new Color(Math.Clamp(b.R + v, 0, 1), Math.Clamp(b.G + v, 0, 1), Math.Clamp(b.B + v, 0, 1));
+    }
+
+    /// <summary>Remet chaque triangle dans le sens de Godot (face avant = sommets dans le sens horaire vue de l'extérieur,
+    /// c.-à-d. produit vectoriel opposé à la normale). Sans cela, le matériau (cull_disabled) voyait l'arrière des murs
+    /// et retournait leur normale vers l'intérieur : façades noires côté soleil, éclairées côté ombre.</summary>
+    static void FrontFaces(Mesh m)
+    {
+        for (int t = 0; t + 2 < m.I.Count; t += 3)
+        {
+            int a = m.I[t], b = m.I[t + 1], c = m.I[t + 2];
+            var cross = (m.V[b] - m.V[a]).Cross(m.V[c] - m.V[a]);
+            if (cross.Dot(m.N[a] + m.N[b] + m.N[c]) > 0) { m.I[t + 1] = c; m.I[t + 2] = b; }
+        }
     }
 
     static void Walls(List<V2> ring, double bottom, double top, double ground, Color col, Vector2 uv2, in Frame fr, Mesh m)

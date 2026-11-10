@@ -75,7 +75,11 @@ public static class RoadBuilder
         };
     }
 
-    const float Lift = 0.12f;   // m au-dessus du sol
+    // m au-dessus du sol (+ 2 cm par rang de priorité pour l'ordre des croisements). Garder bas : les voitures et le
+    // personnage roulent sur le relief, une chaussée trop haute leur couperait les roues (le shader rapproche déjà
+    // les rubans de la caméra pour qu'ils restent visibles au-dessus d'un relief plus grossier).
+    const float Lift = 0.05f, LiftPerPriority = 0.02f;
+    const double MinBridgeClearance = 2; // m : en dessous, un pont est posé au sol (le relief ne montre pas le creux)
 
     // --- Règles Overture (« between » = portion de la longueur du tronçon complet) ---
     readonly record struct Range(double A, double B);
@@ -195,7 +199,7 @@ public static class RoadBuilder
                 if (part.Length < 4) continue;
                 data.Segments++;
                 var line = BuildLine(part, z, x, y, offset, total, tunnels, bridges, decks, spacing, Math.Clamp(spacing * 2, 2, 8), ref incomplete);
-                float lift = Lift + style.Priority * 0.04f;
+                float lift = Lift + style.Priority * LiftPerPriority;
                 foreach (var run in line)
                 {
                     Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
@@ -267,7 +271,7 @@ public static class RoadBuilder
         {
             var br = bridges[k];
             double ha, hb, ta = br.A, tb = br.B;
-            if (decks != null) (ha, hb) = decks[k];
+            if (decks != null) { (ha, hb) = decks[k]; if (double.IsNaN(ha)) continue; } // pont sans creux : posé au sol
             else
             {
                 // tronçon non recomposé (pont sur toute sa longueur) : culées = extrémités de ce morceau
@@ -277,6 +281,7 @@ public static class RoadBuilder
                 if (i0 < 0 || i1 <= i0) continue;
                 ha = heights[i0]; hb = heights[i1]; ta = pts[i0].t; tb = pts[i1].t;
             }
+            if (decks == null && Clearance(pts, heights, ha, hb, ta, tb) < MinBridgeClearance) continue; // voir DeckHeights
             for (int i = 0; i < pts.Count; i++)
             {
                 double t = pts[i].t;
@@ -436,6 +441,20 @@ public static class RoadBuilder
         return chain[^1].D[^1];
     }
 
+    /// <summary>Plus grand creux (m) entre le tablier droit (culées <paramref name="ha"/>, <paramref name="hb"/>) et le relief.</summary>
+    static double Clearance(List<(Vec3d dir, double t)> pts, double[] heights, double ha, double hb, double ta, double tb)
+    {
+        double clearance = 0;
+        for (int i = 0; i < pts.Count; i++)
+        {
+            double t = pts[i].t;
+            if (t < ta || t > tb) continue;
+            double a = (t - ta) / Math.Max(tb - ta, 1e-9);
+            clearance = Math.Max(clearance, ha * (1 - a) + hb * a - heights[i]);
+        }
+        return clearance;
+    }
+
     /// <summary>Hauteur des deux culées de chaque pont. Les limites OSM tombent souvent un peu avant le haut du talus :
     /// on remonte jusqu'à 30 m vers l'extérieur tant que le terrain monte.</summary>
     static (double, double)[] DeckHeights(List<Piece> chain, List<Range> bridges, double spacing, ref bool incomplete)
@@ -444,7 +463,20 @@ public static class RoadBuilder
         var res = new (double, double)[bridges.Count];
         for (int k = 0; k < bridges.Count; k++)
         {
-            res[k] = (Abutment(bridges[k].A * total, -1, ref incomplete), Abutment(bridges[k].B * total, +1, ref incomplete));
+            double ma = bridges[k].A * total, mb = bridges[k].B * total;
+            double ha = Abutment(ma, -1, ref incomplete), hb = Abutment(mb, +1, ref incomplete);
+            // Le relief (30 m, lissé) ne montre souvent pas le creux franchi : passage supérieur au-dessus d'une autre rue,
+            // petit ruisseau… Le tablier ne serait alors qu'une feuille flottant à 30 cm du sol, qui traverse les voitures
+            // et le personnage. Sans vrai creux (moins de 2 m), la voie reste posée au sol. Mesuré sur tout le pont :
+            // tous les morceaux du tronçon décident pareil (pas de marche en bord de tuile).
+            double clearance = 0;
+            int n = Math.Max(2, (int)Math.Ceiling((mb - ma) / Math.Max(spacing, 5)));
+            for (int i = 1; i < n; i++)
+            {
+                double a = (double)i / n;
+                clearance = Math.Max(clearance, ha * (1 - a) + hb * a - Ground(PointAt(chain, ma + (mb - ma) * a), spacing, ref incomplete));
+            }
+            res[k] = clearance < MinBridgeClearance ? (double.NaN, double.NaN) : (ha, hb);
         }
         return res;
 
