@@ -14,6 +14,7 @@ public sealed class BuildingMeshData
     public Vector2[] Uv, Uv2;            // UV : (abscisse le long du mur, hauteur au-dessus du sol) ; UV2 : (fenêtres 0/1, aléa)
     public int[] Indices;
     public int[] PerArea;                // nombre de bâtiments par zone construite
+    public List<Obstacles.Shape> Footprints; // murs solides pour le personnage (voir Obstacles)
     public bool Incomplete;              // relief provisoire (téléchargement en cours) : à reconstruire
     public int DataVersion;
 }
@@ -49,6 +50,7 @@ public static class BuildingBuilder
         public readonly List<Color> C = new();
         public readonly List<Vector2> Uv = new(), Uv2 = new();
         public readonly List<int> I = new();
+        public readonly List<Obstacles.Shape> Obs = new();
     }
 
     /// <summary>Repère local d'un bâtiment (plan tangent au centre).</summary>
@@ -90,6 +92,7 @@ public static class BuildingBuilder
         }
         data.Vertices = m.V.ToArray(); data.Normals = m.N.ToArray(); data.Colors = m.C.ToArray();
         data.Uv = m.Uv.ToArray(); data.Uv2 = m.Uv2.ToArray(); data.Indices = m.I.ToArray();
+        data.Footprints = m.Obs;
         data.Incomplete = incomplete;
         return data;
     }
@@ -221,6 +224,11 @@ public static class BuildingBuilder
         var roof = RoofColor(f, shape, pitched, seed);
         bool windows = height >= 4 && footprint >= 25 && cls is not ("garage" or "garages" or "shed" or "roof" or "carport" or "hut" or "silo" or "storage_tank" or "transformer_tower");
         var uv2 = new Vector2(windows ? 1 : 0, (float)seed);
+
+        // Collisions : contour extérieur (les cours intérieures sont pleines, pour l'instant)
+        var ring = new Vec3d[ext.Count];
+        for (int i = 0; i < ext.Count; i++) ring[i] = fr.C * R + fr.East * ext[i].X + fr.North * ext[i].Y;
+        m.Obs.Add(Obstacles.Shape.Polygon(ring, baseH, top));
 
         Walls(ext, baseH, eave, gmin, wall, uv2, fr, m);
         foreach (var h in holes) Walls(h, baseH, eave, gmin, wall, uv2, fr, m);

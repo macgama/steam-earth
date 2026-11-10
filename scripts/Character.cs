@@ -21,6 +21,7 @@ public partial class Character : Node3D
     public double Altitude => PosD.Length() - Geo.Radius;
 
     public const double Height = 1.8;
+    public const double BodyRadius = 0.3;
     public const double JumpSpeed = 4.5;   // m/s → saut d'environ 1 m
     public const double Gravity = 9.81;
 
@@ -96,7 +97,15 @@ public partial class Character : Node3D
         if (move.Length() > 1e-6)
         {
             var dir = move.Normalized();
-            PosD += dir * (speed * dt);
+            // Décors solides (troncs, murs) : on glisse le long au lieu de les traverser.
+            // Pas de 25 cm au plus, pour ne jamais sauter par-dessus un tronc quand les images sont lentes.
+            double dist = speed * dt;
+            int steps = Math.Clamp((int)Math.Ceiling(dist / 0.25), 1, 200);
+            for (int k = 0; k < steps; k++)
+            {
+                PosD += dir * (dist / steps);
+                PosD = Obstacles.Resolve(PosD, BodyRadius, Height);
+            }
             Speed = speed;
             // Le corps se tourne progressivement vers la direction de marche
             Geo.LocalFrame(up, out var east, out var north);
