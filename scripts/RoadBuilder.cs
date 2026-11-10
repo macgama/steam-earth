@@ -69,7 +69,6 @@ public static class RoadBuilder
         };
     }
 
-    const double Resample = 8;  // m : les rubans suivent le relief à ce pas
     const float Lift = 0.12f;   // m au-dessus du sol
 
     // --- Règles Overture (« between » = portion de la longueur du tronçon complet) ---
@@ -141,7 +140,9 @@ public static class RoadBuilder
     }
 
     /// <summary>Tuile détaillée (zoom 14) : rubans.</summary>
-    public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y)
+    /// <param name="spacing">précision du relief (m) : 1 près du joueur dans les zones haute définition (Suisse 0,5 m),
+    /// plus grossier au loin, 10 ailleurs (Copernicus 30 m). Les rubans sont rééchantillonnés en conséquence.</param>
+    public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y, double spacing)
     {
         var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
@@ -173,7 +174,7 @@ public static class RoadBuilder
             {
                 if (part.Length < 4) continue;
                 data.Segments++;
-                var line = BuildLine(part, z, x, y, tunnels, bridges, 10, ref incomplete);
+                var line = BuildLine(part, z, x, y, tunnels, bridges, spacing, Math.Clamp(spacing * 2, 2, 8), ref incomplete);
                 float lift = Lift + style.Priority * 0.04f;
                 foreach (var run in line)
                 {
@@ -200,7 +201,7 @@ public static class RoadBuilder
 
     /// <summary>Polyligne → suites de points (direction, hauteur) rééchantillonnées, coupées aux tunnels.</summary>
     static List<List<(Vec3d dir, double h)>> BuildLine(double[] part, int z, int x, int y, List<Range> tunnels, List<Range> bridges,
-        double spacing, ref bool incomplete)
+        double spacing, double step, ref bool incomplete)
     {
         int n = part.Length / 2;
         var dirs = new Vec3d[n];
@@ -218,7 +219,7 @@ public static class RoadBuilder
             if (i > 0)
             {
                 double len = cum[i] - cum[i - 1];
-                int steps = Math.Max(1, (int)Math.Ceiling(len / Resample));
+                int steps = Math.Max(1, (int)Math.Ceiling(len / step));
                 for (int s = 1; s < steps; s++)
                 {
                     double a = (double)s / steps;
@@ -311,7 +312,7 @@ public static class RoadBuilder
             {
                 if (part.Length < 4) continue;
                 data.Segments++;
-                foreach (var run in BuildLine(part, z, x, y, none, none, 120, ref incomplete))
+                foreach (var run in BuildLine(part, z, x, y, none, none, 120, 16, ref incomplete))
                     for (int i = 0; i + 1 < run.Count; i++)
                     {
                         // sous-tuile selon le milieu du segment

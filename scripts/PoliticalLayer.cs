@@ -163,7 +163,8 @@ void vertex() {
     // sous un relief affiché plus grossièrement que celui sur lequel elle est posée.
     vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
     float d = length(v.xyz);
-    v.xyz *= max(0.0, 1.0 - 0.003 - 6.0 / max(d, 1.0));
+    float pull = min(0.003 * d + 6.0, 0.2 * d); // borné : un sommet ne doit jamais arriver sur la caméra
+    v.xyz *= 1.0 - pull / max(d, 0.001);
     POSITION = PROJECTION_MATRIX * v;
 }
 void fragment() {

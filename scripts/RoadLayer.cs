@@ -36,6 +36,7 @@ public partial class RoadLayer : Node3D
         public MeshInstance3D Mesh;           // zoom 14
         public MeshInstance3D[] Sub;          // zoom 12 : 16 sous-tuiles
         public double LastBuild;
+        public double Spacing = 10;   // précision du relief utilisée (m)
         public int Segments;
     }
 
@@ -99,7 +100,11 @@ public partial class RoadLayer : Node3D
                     m.Position = pos;
                 }
             // Relief plus fin arrivé depuis la construction : on reconstruit (au plus une fois toutes les 2 s)
-            if (t.Incomplete && t.BuiltVersion != StreamedRaster.DataVersion && !t.Loading && _building < MaxBuilds && _clock - t.LastBuild > 2)
+            if (t.Loading || _building >= MaxBuilds) continue;
+            if (t.Incomplete && t.BuiltVersion != StreamedRaster.DataVersion && _clock - t.LastBuild > 2)
+                Build(t);
+            // Zone haute définition : le relief sous les routes s'affine (ou redevient grossier) avec la distance
+            else if (t.Z == DetailZoom && SpacingFor(t, player, agl) != t.Spacing && _clock - t.LastBuild > 1)
                 Build(t);
         }
         _lineMat.SetShaderParameter("opacity", (float)Math.Clamp(0.75 - agl / 80_000, 0.2, 0.6));
@@ -165,12 +170,29 @@ public partial class RoadLayer : Node3D
         }
     }
 
+    /// <summary>Précision du relief voulue pour une tuile détaillée : la même que le terrain affiché à cette distance
+    /// (le terrain se subdivise jusqu'à ~0,6 m près du joueur en zone 0,5 m, ~d/50 plus loin).</summary>
+    static double SpacingFor(Tile t, Vec3d player, double agl)
+    {
+        PmTilesArchive.TileToLatLon(t.Z, t.X, t.Y, 0.5, 0.5, out double lat, out double lon);
+        if (!SwissAlti3D.Covers(lat, lon)) return 10;
+        double flat = Math.Max(0, (t.Center - player.Normalized()).Length() * Geo.Radius - t.HalfSize);
+        double d = Math.Sqrt(flat * flat + agl * agl);
+        double Want(double dist) => dist < 600 ? 1 : dist < 2_000 ? 4 : 10;
+        double w = Want(d);
+        // hystérésis : on ne repasse au grossier qu'avec 30 % de marge (pas de reconstructions en boucle en bordure)
+        if (w > t.Spacing && Want(d / 1.3) <= t.Spacing) return t.Spacing;
+        return w;
+    }
+
     void Build(Tile t)
     {
         t.Loading = true;
         _building++;
         t.LastBuild = _clock;
         var archive = _archive.Result;
+        if (t.Z == DetailZoom) t.Spacing = SpacingFor(t, Camera.PlayerPos, Math.Max(0, Camera.Altitude - Camera.GroundHeight));
+        double spacing = t.Spacing;
         Task.Run(async () =>
         {
             RoadMeshData data = null;
@@ -179,7 +201,7 @@ public partial class RoadLayer : Node3D
                 t.Mvt ??= await archive.GetTileAsync(t.Z, t.X, t.Y) ?? Array.Empty<byte>();
                 var layers = Mvt.Decode(t.Mvt, new HashSet<string> { "segment" }, RoadBuilder.Keys);
                 var segs = layers.TryGetValue("segment", out var s) ? s : new List<Mvt.Feature>();
-                data = t.Z == DetailZoom ? RoadBuilder.BuildDetailed(segs, t.Z, t.X, t.Y) : RoadBuilder.BuildOverview(segs, t.Z, t.X, t.Y);
+                data = t.Z == DetailZoom ? RoadBuilder.BuildDetailed(segs, t.Z, t.X, t.Y, spacing) : RoadBuilder.BuildOverview(segs, t.Z, t.X, t.Y);
             }
             catch (Exception e) { GD.PrintErr($"[RoadLayer] tuile {t.Z}/{t.X}/{t.Y} : {e.Message}"); }
             _done.Enqueue((t, data));
@@ -260,7 +282,10 @@ render_mode cull_disabled, depth_draw_opaque;
 void vertex() {
     vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
     float d = length(v.xyz);
-    v.xyz *= max(0.0, 1.0 - 0.002 - 0.3 / max(d, 0.5));
+    // décalage borné à 20 % de la distance : un sommet ne doit jamais arriver sur la caméra
+    // (sinon le triangle traverse tout l'écran)
+    float pull = min(0.003 * d + 0.25, 0.2 * d);
+    v.xyz *= 1.0 - pull / max(d, 0.001);
     POSITION = PROJECTION_MATRIX * v;
 }
 void fragment() {
@@ -276,7 +301,8 @@ uniform float opacity = 0.8;
 void vertex() {
     vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
     float d = length(v.xyz);
-    v.xyz *= max(0.0, 1.0 - 0.004 - 10.0 / max(d, 1.0));
+    float pull = min(0.004 * d + 10.0, 0.2 * d);
+    v.xyz *= 1.0 - pull / max(d, 0.001);
     POSITION = PROJECTION_MATRIX * v;
 }
 void fragment() {
