@@ -228,6 +228,8 @@ public partial class RoadLayer : Node3D
                 arrays[(int)Mesh.ArrayType.Vertex] = data.Vertices;
                 arrays[(int)Mesh.ArrayType.Normal] = data.Normals;
                 arrays[(int)Mesh.ArrayType.Color] = data.Colors;
+                arrays[(int)Mesh.ArrayType.TexUV] = data.UVs;
+                arrays[(int)Mesh.ArrayType.TexUV2] = data.UV2s;
                 arrays[(int)Mesh.ArrayType.Index] = data.Indices;
                 mesh = new ArrayMesh();
                 mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -276,6 +278,10 @@ public partial class RoadLayer : Node3D
 
     // Rubans éclairés par le soleil ; chaque sommet est rapproché de la caméra le long du rayon de vue
     // (ne change pas l'image, seulement la profondeur) pour rester au-dessus d'un relief affiché plus grossièrement.
+    // Revêtements procéduraux (pas de texture à charger) : asphalte avec lignes blanches, pavés, gravier avec bande
+    // d'herbe, terre, ballast de voie ferrée avec traverses, rails en acier. Les détails fins s'estompent avec la
+    // distance (pas de scintillement). Chaque sommet est rapproché de la caméra le long du rayon de vue
+    // (ne change pas l'image, seulement la profondeur) pour rester au-dessus d'un relief affiché plus grossièrement.
     const string RibbonShader = @"
 shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
@@ -283,15 +289,73 @@ void vertex() {
     vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
     float d = length(v.xyz);
     // décalage borné à 20 % de la distance : un sommet ne doit jamais arriver sur la caméra
-    // (sinon le triangle traverse tout l'écran)
     float pull = min(0.003 * d + 0.25, 0.2 * d);
     v.xyz *= 1.0 - pull / max(d, 0.001);
     POSITION = PROJECTION_MATRIX * v;
 }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// bande de demi-largeur hw centrée en c, antialiasée
+float band(float x, float c, float hw, float aa) { return 1.0 - smoothstep(hw - aa, hw + aa, abs(x - c)); }
 void fragment() {
-    ALBEDO = pow(COLOR.rgb, vec3(2.2));
-    ROUGHNESS = 0.92;
-    SPECULAR = 0.2;
+    int kind = int(floor(COLOR.a * 10.0 + 0.5));
+    float w = UV2.x;
+    float xm = UV.x * w;   // mètres depuis le bord gauche
+    float ym = UV.y;       // mètres le long de la voie
+    vec2 pm = vec2(xm, ym);
+    float aa = max(max(fwidth(xm), fwidth(ym)), 0.001);
+    float detail = 1.0 - smoothstep(0.06, 0.35, aa);   // 1 = de près, 0 = au loin
+    vec3 col = pow(COLOR.rgb, vec3(2.2));
+    float n = vnoise(pm * 2.0) * 0.5 + vnoise(pm * 9.0) * 0.5;
+    float rough = 0.92;
+    float metal = 0.0;
+    if (kind == 0 || kind == 1) {
+        // asphalte : grain fin et taches ; lignes blanches sur les grandes routes
+        col *= mix(1.0, 0.86 + 0.28 * n, detail);
+        if (kind == 0 && w > 4.5) {
+            float edge = max(band(xm, 0.35, 0.075, aa), band(xm, w - 0.35, 0.075, aa));
+            float dash = 1.0 - smoothstep(0.30, 0.34, fract(ym / 9.0));   // trait 3 m, espace 6 m
+            float mid = band(xm, w * 0.5, 0.07, aa) * dash;
+            col = mix(col, vec3(0.80), max(edge, mid) * mix(0.35, 1.0, detail));
+        }
+    } else if (kind == 2) {
+        // pavés / dalles : joints de 0,5 m
+        vec2 g = fract(pm / vec2(0.5, 0.25) + vec2(0.0, step(0.5, fract(xm))));
+        float joint = 1.0 - min(smoothstep(0.0, 0.08, min(g.x, 1.0 - g.x)), smoothstep(0.0, 0.12, min(g.y, 1.0 - g.y)));
+        col *= mix(1.0, (0.9 + 0.2 * hash(floor(pm / vec2(0.5, 0.25)))) * (1.0 - 0.35 * joint), detail);
+    } else if (kind == 3) {
+        // chemin de gravier : deux traces de roues, herbe au milieu
+        col *= mix(1.0, 0.8 + 0.4 * vnoise(pm * 14.0), detail);
+        float grass = band(xm, w * 0.5, w * 0.12, max(aa, 0.15)) * (0.6 + 0.4 * vnoise(pm * 1.5));
+        col = mix(col, vec3(0.10, 0.16, 0.05), grass * mix(0.5, 1.0, detail));
+    } else if (kind == 4) {
+        // sentier en terre, bords irréguliers
+        col *= mix(1.0, 0.75 + 0.5 * n, detail);
+    } else if (kind == 5) {
+        // ballast : gravier gris-brun + traverses tous les 0,6 m
+        float stones = vnoise(pm * 22.0) * 0.6 + vnoise(pm * 6.0) * 0.4;
+        col *= mix(1.0, 0.75 + 0.5 * stones, detail);
+        float half_len = min(1.3, w * 0.5 - 0.25);
+        float across = 1.0 - smoothstep(half_len - aa, half_len + aa, abs(xm - w * 0.5));
+        float sleeper = band(fract(ym / 0.6) * 0.6, 0.3, 0.12, aa) * across;
+        vec3 wood = vec3(0.13, 0.10, 0.08) * (0.8 + 0.4 * vnoise(pm * vec2(3.0, 30.0)));
+        // au loin, les traverses se fondent en une bande plus sombre au milieu de la voie
+        col = mix(col, wood, mix(across * 0.3, sleeper, detail));
+    } else {
+        // rail : acier brillant sur le dessus, rouille sur les côtés
+        float top = band(UV.x, 0.5, 0.22, fwidth(UV.x) + 0.001);
+        col = mix(vec3(0.25, 0.13, 0.07), vec3(0.65, 0.65, 0.68), top);
+        metal = 0.9 * top;
+        rough = mix(0.8, 0.3, top);
+    }
+    ALBEDO = col;
+    ROUGHNESS = rough;
+    METALLIC = metal;
+    SPECULAR = 0.3;
 }";
 
     const string LineShader = @"
