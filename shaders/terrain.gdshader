@@ -21,6 +21,7 @@ uniform float detail_strength = 1.0;     // 0 = textures désactivées (qualité
 uniform float detail_distance = 1500.0;  // au-delà, seule la couleur macro reste
 uniform float scale_near = 3.0;          // m par répétition (motif fin)
 uniform float scale_far = 23.0;          // m par répétition (motif large, casse la répétition)
+uniform bool two_scales = true;          // qualité basse : une seule échelle (deux fois moins de lectures)
 
 // Neige réelle : carte mondiale GFS 360×181 (R = épaisseur m, G = altitude du relief du modèle m, B = température 2 m K).
 // Recalée sur le vrai relief : plus d'épaisseur en altitude, fonte quand la température locale dépasse ~1 °C.
@@ -67,6 +68,7 @@ vec3 tri(float layer, float scale, vec3 bw) {
 
 vec3 layer_color(float layer, vec3 bw) {
 	// deux échelles mélangées : moins de répétition visible
+	if (!two_scales) return tri(layer, scale_near * 1.5, bw);
 	return tri(layer, scale_near, bw) * 0.6 + tri(layer, scale_far, bw) * 0.4;
 }
 
@@ -86,7 +88,7 @@ void fragment() {
 		vec3 d = vec3(0.0);
 		if (w4.r > 0.01) d += layer_color(0.0, bw) * w4.r / 0.57;
 		if (w4.g > 0.01) d += layer_color(1.0, bw) * w4.g / 0.52;
-		if (w4.b > 0.01) d += layer_color(2.0, bw) * w4.b / 0.58;
+		if (w4.b > 0.01) d += layer_color(2.0, bw) * w4.b / 0.60;
 		if (w4.a > 0.01) d += layer_color(3.0, bw) * w4.a / 0.54;
 		if (dirt > 0.01) d += layer_color(4.0, bw) * dirt / 0.63;
 		vec3 ground = macro * d;

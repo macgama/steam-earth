@@ -87,13 +87,31 @@ champs, zones bâties, roche/désert, glaciers et neiges éternelles, zones humi
 - `Vegetation.cs` : **arbres et buissons en 3D** dans un rayon d'environ 1,5 km (chunks de 10 et 20 m), placés là
   où WorldCover indique forêt, mangrove ou broussailles, plus quelques arbres isolés dans les prés.
   Positions fixes (on retrouve la même forêt), rendu par MultiMesh. Le compteur « arbres » du HUD donne leur nombre.
+  - **Essences** : épicéa, sapin, pin, mélèze, feuillus (hêtre, chêne…), bouleau, peuplier, palmier, acacia, buissons,
+    choisies selon la latitude, l'altitude et la limite des arbres ; chaque modèle a sa silhouette.
+  - **Saisons** : mélèzes dorés puis nus, feuillus roux en automne et dénudés en hiver (hémisphère sud inversé,
+    tropiques toujours verts).
+  - **Vent réel** : `shaders/tree.gdshader` plie la cime selon l'uniforme global `wind` (vent à 10 m et rafales GFS,
+    mis à jour à chaque image par `Vegetation.SetWind`) ; palmiers et peupliers plus souples.
+  - **Pas d'arbres dans les rues ni dans les bâtiments** : les contours des bâtiments et un couloir le long de chaque
+    route, chemin et voie ferrée (largeur + 1,5 m, sentiers + 0,4 m) retirent les arbres qui tombent dessus
+    (`Obstacles.Shape.Clears`).
+- `GroundCover.cs` : **herbe, cailloux et rochers** au ras du sol autour du personnage (cases de 16 m, rayon 40 à
+  150 m selon la qualité), selon le type de sol ; l'herbe ondule avec le vent réel, les gros rochers sont solides.
+- `shaders/terrain.gdshader` : **textures au sol** (herbe, sous-bois, champ, ville/asphalte, terre, roche, neige,
+  `data/textures/`, générées par `tools/textures/gen_ground_textures.py`) projetées en triplanaire, mélangées selon
+  la classe WorldCover et la pente ; deux échelles mélangées pour casser la répétition (qualité Élevé et Ultra).
+  Elles s'effacent au loin au profit des couleurs par sommet.
+- **Neige réelle** : la hauteur de neige GFS (SNOD) et le relief du modèle sont ajoutés au fichier météo ; le shader
+  la ramène au vrai relief (plus épaisse en altitude, fond au-dessus de 1 à 4 °C), si bien que la limite des neiges
+  suit les chutes et les saisons.
 
 | Forêt près d'Interlaken | Forêts et champs près de Berne | Glacier d'Aletsch |
 |---|---|---|
 | ![](docs/sols-foret.jpg) | ![](docs/sols-forets-champs.jpg) | ![](docs/sols-glacier.jpg) |
 
-Limites actuelles : les routes apparaissent comme zones bâties (grises) dans
-WorldCover ; la neige saisonnière n'est pas encore simulée (seuls glaciers et neiges éternelles sont blancs).
+Limites actuelles : les routes apparaissent comme zones bâties (grises) dans WorldCover ; la neige GFS est à 1°
+(≈ 100 km), corrigée par l'altitude mais sans tenir compte de l'exposition des pentes.
 
 ## Collisions avec les décors
 
@@ -351,7 +369,6 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 
 ## Limites connues / prochaines étapes
 
-- Couleurs par sommet provisoires → textures + shader (herbe, roche, neige selon pente et altitude).
 - Relief plus fin que 30 m : pays par pays (Suisse 0,5 m avec swissALTI3D, France 1 m avec le RGE ALTI…).
 - Copernicus n'a pas de fichier pour l'Arménie et l'Azerbaïdjan (relief à ~5 km là-bas pour l'instant).
 - Transports : tracés réels des lignes suisses, retards en direct, puis autres pays selon la ville de départ des

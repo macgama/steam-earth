@@ -20,3 +20,10 @@ project/assembly_name="SteamEarth"
 [rendering]
 
 anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+wind={
+"type": "vec4",
+"value": Vector4(0, 1, 0, 0)
+}

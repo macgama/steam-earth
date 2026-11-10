@@ -31,20 +31,6 @@ public partial class Planet : Node3D
     QuadNode[] _roots;
     ShaderMaterial _material;
 
-    /// <summary>Textures de sol (qualité) : 0 = désactivées, 1 = normales.</summary>
-    public float GroundDetail
-    {
-        get => _groundDetail;
-        set { _groundDetail = value; _material?.SetShaderParameter("detail_strength", value); }
-    }
-    float _groundDetail = 1;
-    /// <summary>Distance (m) jusqu'à laquelle les textures de sol sont visibles.</summary>
-    public float GroundDetailDistance
-    {
-        get => _groundDetailDistance;
-        set { _groundDetailDistance = value; _material?.SetShaderParameter("detail_distance", value); }
-    }
-    float _groundDetailDistance = 1500;
 
     ImageTexture _snowTex;
     DateTime _snowUpdated = DateTime.MinValue;
@@ -108,8 +94,6 @@ public partial class Planet : Node3D
     {
         _material = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
         _material.SetShaderParameter("layers", LoadGroundLayers());
-        _material.SetShaderParameter("detail_strength", _groundDetail);
-        _material.SetShaderParameter("detail_distance", _groundDetailDistance);
         var lights = NightLights.CreateTexture();
         if (lights != null) _material.SetShaderParameter("city_lights", lights);
         _roots = new QuadNode[6];
@@ -125,6 +109,11 @@ public partial class Planet : Node3D
         SplitFactor = q.TerrainSplitFactor;
         HdMaxLevel = Math.Max(MaxLevel, q.TerrainHdMaxLevel);
         MaxConcurrentBuilds = q.TerrainBuildThreads;
+        // Textures du sol : 0 = aucune ; 1 = une échelle, proches ; 2 = deux échelles, 800 m ; 3 = deux échelles, 1,5 km
+        int gd = Math.Clamp(q.GroundDetail, 0, 3);
+        _material.SetShaderParameter("detail_strength", gd > 0 ? 1.0f : 0.0f);
+        _material.SetShaderParameter("detail_distance", gd switch { 1 => 300f, 2 => 800f, _ => 1500f });
+        _material.SetShaderParameter("two_scales", gd >= 2);
     }
 
     void OnQualityChanged(QualityProfile q, QualityProfile old)

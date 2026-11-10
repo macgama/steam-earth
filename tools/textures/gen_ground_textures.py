@@ -57,8 +57,8 @@ save("forest", tint(g, (1.05, 1.0, 0.85)))
 
 # Champ : sillons (lignes) + mottes
 y = np.arange(N)[:, None] * np.ones((1, N))
-furrow = 0.5 + 0.5 * np.sin(y / N * 2 * np.pi * 48 + 3 * noise(1.5, 7))
-g = 0.35 + 0.25 * furrow + 0.2 * noise(0.8, 8) + 0.15 * blades(9, 8000, 4)
+furrow = 0.5 + 0.5 * np.sin(y / N * 2 * np.pi * 4 + 2 * noise(1.5, 7))
+g = 0.42 + 0.12 * furrow + 0.22 * noise(0.8, 8) + 0.15 * blades(9, 8000, 4)
 save("field", tint(g, (1.05, 1.0, 0.9)))
 
 # Terre / sable : grains

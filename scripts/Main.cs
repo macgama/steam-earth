@@ -153,6 +153,7 @@ public partial class Main : Node3D
             // (le personnage n'apparaît qu'une fois le monde chargé) ; --climb : en tenant Espace
             if (a.StartsWith("--walktest=")) _walkTest = int.Parse(a.Substring(11));
             if (a == "--climb") _camera.AutoJump = true;
+            if (a == "--clear") _atmosphere.ClearSky = true; // tests : sans nuages
             if (a.StartsWith("--at="))
             {
                 var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
@@ -202,6 +203,7 @@ public partial class Main : Node3D
         double alt = player.Length() - Geo.Radius;
         double ground = _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
         var w = _atmosphere.Current;
+        Vegetation.SetWind(w); // arbres et herbe balancés par le vent réel (uniforme global « wind »)
         var utc = _atmosphere.GameUtc;
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
         double solarH = ((utc.TimeOfDay.TotalHours + camLon / 15) % 24 + 24) % 24;

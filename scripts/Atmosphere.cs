@@ -19,6 +19,8 @@ public partial class Atmosphere : Node3D
 
     /// <summary>Décalage par rapport à l'heure réelle (touches + / − / R), pour tester.</summary>
     public double TimeOffsetHours;
+    /// <summary>Tests (argument --clear) : ciel dégagé, pour voir le sol.</summary>
+    public bool ClearSky;
     public DateTime GameUtc => DateTime.UtcNow.AddHours(TimeOffsetHours);
 
     /// <summary>
@@ -180,6 +182,7 @@ public partial class Atmosphere : Node3D
         double alt = Camera.Altitude;
         double agl = alt - Camera.GroundHeight;
         var w = Weather.Sample(lat, lon, utc);
+        if (ClearSky) { w.CloudLow = w.CloudMid = w.CloudHigh = 0; w.PrecipMmH = 0; w.VisibilityM = 30000; }
         Current = w;
 
         // --- Soleil (repère planète : la lumière est enfant de la planète)

@@ -22,8 +22,8 @@ public sealed class ChunkData
     public bool Incomplete;   // des données fines étaient encore en téléchargement : à reconstruire
     public int DataVersion;   // version des données au moment de la construction
     // Végétation (chunks les plus fins seulement) : transformations relatives au centre du chunk
-    public Transform3D[] Conifers, Broadleaves, Bushes;
-    public Color[] ConiferTints, BroadleafTints, BushTints;
+    public Transform3D[][] Trees;   // par essence (Vegetation.Species)
+    public Color[][] TreeTints;
     public bool VegetationCollides; // chunks proches (≤ 15 m) : troncs solides pour le personnage
 }
 

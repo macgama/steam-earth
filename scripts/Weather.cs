@@ -111,6 +111,8 @@ public partial class Weather : Node
             var root = doc.RootElement;
             var run = DateTime.Parse(root.GetProperty("run").GetString()).ToUniversalTime();
             if (_data != null && run < RunTime) return false; // garder le plus récent
+            // même échéance mais moins de champs (ancien format sans la neige) : garder la version la plus complète
+            if (_data != null && run == RunTime && root.GetProperty("channels").GetArrayLength() < _enc.Length) return false;
             int w = root.GetProperty("width").GetInt32(), h = root.GetProperty("height").GetInt32();
             var valid = root.GetProperty("valid");
             var chans = root.GetProperty("channels");

@@ -56,8 +56,13 @@ public partial class GroundCover : Node3D
     public int Cells => _cells.Count;
     public int GrassInstances { get; private set; }
 
+    public override void _ExitTree() => GraphicsQuality.Changed -= OnQuality;
+    void OnQuality(QualityProfile q, QualityProfile old) { GrassDensity = q.GrassDensity; Distance = q.GrassDistance; }
+
     public override void _Ready()
     {
+        OnQuality(GraphicsQuality.Current, null);
+        GraphicsQuality.Changed += OnQuality;
         _grassMat = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/grass.gdshader") };
         _rockMat = new StandardMaterial3D { VertexColorUseAsAlbedo = true, Roughness = 0.95f };
         _tuft = MakeTuft();
@@ -107,7 +112,7 @@ public partial class GroundCover : Node3D
         var up = player.Normalized();
         Geo.ToLatLon(up, out double lat, out double lon);
         double agl = player.Length() - Geo.Radius - HeightProvider.SurfaceHeight(lat, lon, 30);
-        float radius = GrassDensity <= 0 && Distance <= 0 ? 0 : Math.Max(Distance, 30);
+        float radius = GrassDensity <= 0 || Distance <= 0 ? 0 : Distance;
         bool active = agl < MaxHeightAboveGround && radius > 0;
 
         // Vent réel : intensité et direction (approximation : direction dans le repère est/nord)

@@ -26,8 +26,16 @@ public static class Obstacles
         // Toit en pente : faîte (RidgeA–RidgeB) à l'altitude Top, qui descend jusqu'à Eave à HalfWidth du faîte
         public Vec3d? RidgeA, RidgeB;
         public double Eave, HalfWidth;
+        /// <summary>Faux : n'arrête pas le personnage (arbre lointain, emprise d'une route).</summary>
+        public bool Solid = true;
+        /// <summary>Vrai : aucun arbre ne pousse dans cette empreinte (bâtiments, routes, voies ferrées).</summary>
+        public bool Clears;
+        /// <summary>Arbre dessiné par un MultiMesh : on peut le cacher s'il tombe dans une empreinte « Clears ».</summary>
+        public MultiMesh Instances;
+        public int InstanceIndex;
         internal Node Owner;
         internal int Stamp;
+        internal double Lat0, Lat1, Lon0, Lon1; // boîte englobante (degrés)
 
         public static Shape Circle(Vec3d center, double radius, double baseAlt, double topAlt) =>
             new() { Center = center, Radius = radius, Base = baseAlt, Top = topAlt, Eave = topAlt };
@@ -35,7 +43,7 @@ public static class Obstacles
         {
             var c = new Vec3d(0, 0, 0);
             foreach (var p in ring) c += p;
-            return new() { Ring = ring, Holes = holes, Center = c * (1.0 / ring.Length), Base = baseAlt, Top = topAlt, Eave = topAlt };
+            return new() { Ring = ring, Holes = holes, Center = c * (1.0 / ring.Length), Base = baseAlt, Top = topAlt, Eave = topAlt, Clears = true };
         }
         /// <summary>Toit à pans : faîte entre <paramref name="a"/> et <paramref name="b"/>, gouttière à <paramref name="halfWidth"/> m.</summary>
         public void SetPitched(Vec3d a, Vec3d b, double ridgeAlt, double eaveAlt, double halfWidth)
@@ -71,23 +79,66 @@ public static class Obstacles
             s.Owner = owner;
             if (s.Ring == null)
             {
-                CellOf(s.Center, out int la, out int lo);
-                Add(Key(la, lo), s, list);
+                Geo.ToLatLon(s.Center.Normalized(), out s.Lat0, out s.Lon0);
+                s.Lat1 = s.Lat0; s.Lon1 = s.Lon0;
+                Add(Key((int)Math.Floor(s.Lat0 * CellsPerDeg), (int)Math.Floor(s.Lon0 * CellsPerDeg)), s, list);
                 continue;
             }
             // polygone : toutes les cases couvertes par sa boîte englobante (bâtiments longs)
-            int la0 = int.MaxValue, la1 = int.MinValue, lo0 = int.MaxValue, lo1 = int.MinValue;
+            s.Lat0 = s.Lon0 = double.MaxValue; s.Lat1 = s.Lon1 = double.MinValue;
             foreach (var p in s.Ring)
             {
-                CellOf(p, out int la, out int lo);
-                la0 = Math.Min(la0, la); la1 = Math.Max(la1, la); lo0 = Math.Min(lo0, lo); lo1 = Math.Max(lo1, lo);
+                Geo.ToLatLon(p.Normalized(), out double plat, out double plon);
+                s.Lat0 = Math.Min(s.Lat0, plat); s.Lat1 = Math.Max(s.Lat1, plat);
+                s.Lon0 = Math.Min(s.Lon0, plon); s.Lon1 = Math.Max(s.Lon1, plon);
             }
+            int la0 = (int)Math.Floor(s.Lat0 * CellsPerDeg), la1 = (int)Math.Floor(s.Lat1 * CellsPerDeg);
+            int lo0 = (int)Math.Floor(s.Lon0 * CellsPerDeg), lo1 = (int)Math.Floor(s.Lon1 * CellsPerDeg);
             if ((la1 - la0 + 1) * (lo1 - lo0 + 1) > 64) continue; // contour aberrant (ou à cheval sur l'antiméridien)
             for (int la = la0; la <= la1; la++) for (int lo = lo0; lo <= lo1; lo++) Add(Key(la, lo), s, list);
         }
         ByOwner[id] = list;
         Count += shapes.Count;
+        ApplyClearings(list);
         if (!known) owner.TreeExiting += () => Remove(id);
+    }
+
+    static readonly Transform3D Hidden = new(Basis.Identity.Scaled(Vector3.Zero), Vector3.Zero);
+
+    /// <summary>
+    /// Arbres et empreintes « sans arbres » (bâtiments, routes) : quand l'un des deux arrive, les arbres qui tombent
+    /// dans une empreinte sont cachés (et ne gênent plus le personnage).
+    /// </summary>
+    static void ApplyClearings(List<(long cell, Shape shape)> added)
+    {
+        foreach (var (cell, s) in added)
+        {
+            if (!Cells.TryGetValue(cell, out var l)) continue;
+            if (s.Instances != null)
+            {
+                foreach (var c in l) if (c.Clears && Covers(c, s)) { Hide(s); break; }
+            }
+            else if (s.Clears)
+            {
+                foreach (var t in l) if (t.Instances != null && Covers(s, t)) Hide(t);
+            }
+        }
+    }
+
+    static bool Covers(Shape area, Shape tree)
+    {
+        if (tree.Lat0 < area.Lat0 || tree.Lat0 > area.Lat1 || tree.Lon0 < area.Lon0 || tree.Lon0 > area.Lon1) return false;
+        var loc = new Local(tree.Center.Normalized());
+        Locate(area, loc, 0, 0, out bool inside, out _, out _, out _);
+        return inside;
+    }
+
+    static void Hide(Shape tree)
+    {
+        if (tree.Instances == null) return;
+        if (GodotObject.IsInstanceValid(tree.Instances)) tree.Instances.SetInstanceTransform(tree.InstanceIndex, Hidden);
+        tree.Instances = null;
+        tree.Solid = false;
     }
 
     static void Add(long key, Shape s, List<(long, Shape)> list)
@@ -223,6 +274,7 @@ public static class Obstacles
             bool hit = false;
             foreach (var s in Near(feet))
             {
+                if (!s.Solid) continue;
                 if (alt >= s.Top - StepUp || alt + height <= s.Base) continue;
                 Locate(s, loc, px, py, out bool inside, out double bx, out double by, out double dist);
                 if (!inside && dist >= radius) continue;
@@ -256,7 +308,7 @@ public static class Obstacles
         var loc = new Local(p * (1 / len));
         foreach (var s in Near(p))
         {
-            if (s.Top < best || s.Base > alt + stepUp || s.Eave > alt + stepUp) continue;
+            if (!s.Solid || s.Top < best || s.Base > alt + stepUp || s.Eave > alt + stepUp) continue;
             Locate(s, loc, 0, 0, out bool inside, out _, out _, out _);
             if (!inside) continue;
             double roof = RoofAt(s, loc, 0, 0);
@@ -278,7 +330,7 @@ public static class Obstacles
         bool any = false;
         foreach (var s in Near(p))
         {
-            if (alt > s.Top + margin || alt < s.Base - margin) continue;
+            if (!s.Solid || alt > s.Top + margin || alt < s.Base - margin) continue;
             Locate(s, loc, 0, 0, out bool inside, out _, out _, out double dist);
             if (!inside && dist >= margin) continue;
             double r = inside ? RoofAt(s, loc, 0, 0) : s.Eave;
