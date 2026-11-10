@@ -12,6 +12,7 @@ import gzip
 import io
 import struct
 import sys
+import socket
 import urllib.request
 
 import numpy as np
@@ -26,11 +27,19 @@ BASES = [
 ]
 NAMES = [
     "BlackMarble_2016_3km_gray_geo.tif",
-    "BlackMarble_2016_01deg_gray_geo.tif",
     "BlackMarble_2016_3km_gray.jpg",
+    "BlackMarble_2016_3km_gray.tif",
+    "BlackMarble_2016_3km_geo.tif",
+    "BlackMarble_2016_3km.jpg",
+    "BlackMarble_2016_01deg_gray_geo.tif",
+    "BlackMarble_2016_01deg_gray.jpg",
     "BlackMarble_2016_01deg.jpg",
 ]
 W, H = 8192, 4096
+
+# eoimages.gsfc.nasa.gov n'est pas joignable en IPv6 depuis les runners GitHub : on force l'IPv4.
+_gai = socket.getaddrinfo
+socket.getaddrinfo = lambda host, *a, **k: [r for r in _gai(host, *a, **k) if r[0] == socket.AF_INET] or _gai(host, *a, **k)
 
 
 def fetch():
@@ -52,7 +61,14 @@ def main():
     out = sys.argv[1]
     img = Image.open(io.BytesIO(fetch()))
     print("image source", img.size, img.mode)
-    img = img.convert("L").resize((W, H), Image.LANCZOS)
+    if img.mode == "L":
+        g = np.asarray(img, dtype=np.float32)
+    else:
+        # Version couleur : les lumières sont jaune-blanc, les continents bleu sombre.
+        # On garde ce qui est plus rouge que bleu, ce qui efface le fond bleuté.
+        rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+        g = np.clip((rgb[..., 0] - 0.8 * rgb[..., 2]) * 1.25, 0, 255)
+    img = Image.fromarray(g.astype(np.uint8)).resize((W, H), Image.LANCZOS)
     a = np.asarray(img, dtype=np.uint8)
     print("min/moy/max", a.min(), round(float(a.mean()), 2), a.max())
     with gzip.open(out, "wb", compresslevel=9) as f:

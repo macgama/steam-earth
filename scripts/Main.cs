@@ -42,6 +42,7 @@ public partial class Main : Node3D
         LandCover.Init();
         TimeZones.Init();
         Geography.Init();
+        NightLights.Init();
         Overture.Init(System.IO.Path.Combine(OS.GetUserDataDir(), "cache", "overture"));
 
         _camera = new FlyCamera { Name = "Camera" };
@@ -165,6 +166,7 @@ public partial class Main : Node3D
     {
         _frames++;
         _hud.Visible = !_start.IsOpen;
+        _planet.SunDirWorld = _sun.GlobalTransform.Basis.Z.Normalized();
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
