@@ -19,6 +19,7 @@ public partial class Main : Node3D
     Godot.Environment _environment;
     DirectionalLight3D _sun;
     Weather _weather;
+    GroundCover _ground;
     Atmosphere _atmosphere;
     Waves _waves;
     Ocean _ocean;
@@ -86,6 +87,9 @@ public partial class Main : Node3D
         _weather = new Weather { Name = "Weather" };
         AddChild(_weather);
         _atmosphere = new Atmosphere { Name = "Atmosphere", Camera = _camera, Planet = _planet, Weather = _weather, Sun = _sun, Env = _environment };
+        // Herbe, rochers et cailloux autour du joueur (enfant de la planète : même repère que le terrain)
+        _ground = new GroundCover { Name = "GroundCover", Camera = _camera, Atmosphere = _atmosphere };
+        _planet.AddChild(_ground);
         AddChild(_atmosphere);
         // Océans : houle réelle (NOAA GFS-Wave) et fonds marins (GEBCO) ; après Atmosphere (brouillard sous l'eau)
         _waves = new Waves { Name = "Waves" };
@@ -162,6 +166,7 @@ public partial class Main : Node3D
             // (le personnage n'apparaît qu'une fois le monde chargé) ; --climb : en tenant Espace
             if (a.StartsWith("--walktest=")) _walkTest = int.Parse(a.Substring(11));
             if (a == "--climb") _camera.AutoJump = true;
+            if (a == "--clear") _atmosphere.ClearSky = true; // tests : sans nuages
             if (a.StartsWith("--at="))
             {
                 var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
@@ -210,6 +215,7 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         _frames++;
+        _planet.UpdateSnow(_weather, _atmosphere.GameUtc); // neige au sol selon la météo réelle
         _hud.Visible = !_start.IsOpen;
         _planet.SunDirWorld = _sun.GlobalTransform.Basis.Z.Normalized();
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
@@ -218,6 +224,7 @@ public partial class Main : Node3D
         double ground = _camera.Vehicle != null ? Vehicle.Ground(_camera.Vehicle.PosD, out _)
             : _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
         var w = _atmosphere.Current;
+        Vegetation.SetWind(w); // arbres et herbe balancés par le vent réel (uniforme global « wind »)
         var utc = _atmosphere.GameUtc;
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
         double solarH = ((utc.TimeOfDay.TotalHours + camLon / 15) % 24 + 24) % 24;
@@ -230,7 +237,7 @@ public partial class Main : Node3D
             $"Lat {lat:F4}°  Lon {lon:F4}°\n" +
             $"Altitude {alt:N0} m   Sol {ground:N0} m   Hauteur {alt - ground:N0} m\n" +
             $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? $"[MARCHE{(_camera.Grounded ? "" : ", en l'air")}, {(_camera.ThirdPerson ? "vue arrière" : "1re personne")}]" : "")}\n" +
-            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}   obstacles {Obstacles.Count:N0}\n" +
+            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   relief : {(StreamedRaster.Downloading > 0 ? $"téléchargement ({StreamedRaster.Downloading})" : "à jour")}{(SwissAlti3D.Covers(lat, lon) ? "   zone HD 0,5 m (swissALTI3D © swisstopo)" : "")}   arbres {Vegetation.Instances:N0}   obstacles {Obstacles.Count:N0}   herbe {_ground.GrassInstances:N0}\n" +
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Océan : {_ocean.Status}{(_ocean.Underwater ? "   [SOUS L'EAU]" : "")}\n" +

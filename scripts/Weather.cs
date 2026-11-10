@@ -52,7 +52,7 @@ public partial class Weather : Node
     DateTime[] _valid;
     string[] _enc;
     float[] _min, _max;
-    int _iU10, _iV10, _iU850, _iV850, _iGust, _iT, _iLow, _iMid, _iHigh, _iP, _iFz, _iVis;
+    int _iU10, _iV10, _iU850, _iV850, _iGust, _iT, _iLow, _iMid, _iHigh, _iP, _iFz, _iVis, _iSnow = -1, _iOro = -1;
 
     HttpRequest _http;
     double _sinceRefresh;
@@ -111,6 +111,8 @@ public partial class Weather : Node
             var root = doc.RootElement;
             var run = DateTime.Parse(root.GetProperty("run").GetString()).ToUniversalTime();
             if (_data != null && run < RunTime) return false; // garder le plus récent
+            // même échéance mais moins de champs (ancien format sans la neige) : garder la version la plus complète
+            if (_data != null && run == RunTime && root.GetProperty("channels").GetArrayLength() < _enc.Length) return false;
             int w = root.GetProperty("width").GetInt32(), h = root.GetProperty("height").GetInt32();
             var valid = root.GetProperty("valid");
             var chans = root.GetProperty("channels");
@@ -134,6 +136,7 @@ public partial class Weather : Node
             _iU10 = I("wind10_u"); _iV10 = I("wind10_v"); _iU850 = I("wind850_u"); _iV850 = I("wind850_v");
             _iGust = I("gust"); _iT = I("temp2m"); _iLow = I("cloud_low"); _iMid = I("cloud_mid"); _iHigh = I("cloud_high");
             _iP = I("precip"); _iFz = I("frozen"); _iVis = I("visibility");
+            _iSnow = I("snow_depth"); _iOro = I("orography");
             _w = w; _h = h; _frames = nf; _channels = nc; _data = data;
             RunTime = run;
             Status = $"GFS {run:dd.MM HH}h UTC ({origin})";
@@ -227,6 +230,29 @@ public partial class Weather : Node
                 clear *= 1 - v * weights[k];
             }
             img[i] = (byte)Math.Clamp((1 - clear) * 255, 0, 255);
+        }
+        return img;
+    }
+
+    /// <summary>Le fichier météo contient l'épaisseur de neige au sol (versions récentes du pipeline).</summary>
+    public bool HasSnow => _data != null && _iSnow >= 0 && _iOro >= 0;
+
+    /// <summary>
+    /// Carte mondiale de la neige pour le shader du terrain (360×181, flottants) : R = épaisseur de neige (m),
+    /// G = altitude du relief du modèle GFS (m), B = température à 2 m (K). Interpolée dans le temps.
+    /// </summary>
+    public Image SnowMap(DateTime utc)
+    {
+        if (!HasSnow) return null;
+        FrameAt(utc, out int f0, out int f1, out float t);
+        var img = Image.CreateEmpty(_w, _h, false, Image.Format.Rgbf);
+        int n = _w * _h;
+        for (int y = 0; y < _h; y++)
+        for (int x = 0; x < _w; x++)
+        {
+            int i = y * _w + x;
+            float Q(int c) => _data[(f0 * _channels + c) * n + i] * (1 - t) + _data[(f1 * _channels + c) * n + i] * t;
+            img.SetPixel(x, y, new Color(Decode(_iSnow, Q(_iSnow)), Decode(_iOro, Q(_iOro)), _iT >= 0 ? Decode(_iT, Q(_iT)) : 280));
         }
         return img;
     }

@@ -21,6 +21,8 @@ public sealed class RoadMeshData
     public bool Incomplete;         // relief provisoire (téléchargement en cours) : à reconstruire
     public int DataVersion;
     public int Segments;
+    /// <summary>Zoom 14 : couloirs le long des voies (non bloquants) qui retirent les arbres tombant sur la chaussée.</summary>
+    public List<Obstacles.Shape> Clearings;
 }
 
 /// <summary>
@@ -150,7 +152,7 @@ public static class RoadBuilder
     public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y, double spacing,
         Func<int, int, List<Mvt.Feature>> neighbours = null)
     {
-        var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion };
+        var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion, Clearings = new List<Obstacles.Shape>() };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color>(); var idx = new List<int>();
         var uvs = new List<Vector2>(); var uv2s = new List<Vector2>();
@@ -197,6 +199,8 @@ public static class RoadBuilder
                 foreach (var run in line)
                 {
                     Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
+                    // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
+                    Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
                     if (style.Rail)
                     {
                         // deux rails en acier, un peu surélevés (sur les traverses)
@@ -456,6 +460,32 @@ public static class RoadBuilder
                 best = h;
             }
             return best;
+        }
+    }
+
+    /// <summary>Découpe le couloir d'une voie en quadrilatères d'une quinzaine de mètres (non bloquants, « Clears »).</summary>
+    static void Clear(List<(Vec3d dir, double h)> run, double half, List<Obstacles.Shape> outList)
+    {
+        int n = run.Count;
+        if (n < 2) return;
+        int i = 0;
+        while (i < n - 1)
+        {
+            int j = i + 1;
+            while (j < n - 1 && (run[j].dir - run[i].dir).Length() * Geo.Radius < 15) j++;
+            var (da, ha) = run[i]; var (db, hb) = run[j];
+            var t = db - da;
+            if (t.Length() > 1e-12)
+            {
+                var side = t.Normalized().Cross(da).Normalized() * half;
+                var along = t.Normalized() * 0.5; // léger recouvrement entre morceaux
+                var a = da * (Geo.Radius + ha) - along; var b = db * (Geo.Radius + hb) + along;
+                var ring = new[] { a - side, b - side, b + side, a + side };
+                var sh = Obstacles.Shape.Polygon(ring, null, Math.Min(ha, hb) - 2, Math.Max(ha, hb) + 3);
+                sh.Solid = false;
+                outList.Add(sh);
+            }
+            i = j;
         }
     }
 
