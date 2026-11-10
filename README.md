@@ -35,6 +35,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | N | afficher / masquer les noms des villes, villages et rues |
 | P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
 | M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
+| O (ou F10) | menu Graphismes : niveau Bas / Moyen / Élevé / Ultra, résolution 3D, synchronisation verticale, FPS max |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
@@ -63,6 +64,13 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
 | Lauterbrunnen, avant (30 m) | Même endroit, swissALTI3D 0,5 m | Lauterbrunnen vu de 170 m | À pied près de Grindelwald |
 |---|---|---|---|
 | ![](docs/lauterbrunnen-30m.jpg) | ![](docs/lauterbrunnen-05m-sol.jpg) | ![](docs/lauterbrunnen-05m.jpg) | ![](docs/grindelwald-marche-05m.jpg) |
+
+## Qualité graphique : Bas, Moyen, Élevé, Ultra
+
+Au premier lancement, le jeu reconnaît la carte graphique et choisit un niveau (touche O pour changer, réglage mémorisé).
+Chaque niveau règle la finesse du relief, la densité et la distance des arbres, les ombres, l'anticrénelage, les distances
+d'affichage des bâtiments, routes et noms, les nuages et la pluie. **Toute nouvelle amélioration graphique doit passer
+par `GraphicsQuality`** : voir [docs/QUALITE_GRAPHIQUE.md](docs/QUALITE_GRAPHIQUE.md).
 
 ## Couverture des sols : forêts, champs, glaciers, villes
 

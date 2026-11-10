@@ -30,8 +30,10 @@ public partial class GraphicsApplier : Node
         bool compat = method == "gl_compatibility";
 
         var vp = GetViewport();
-        vp.Msaa3D = q.Msaa;
-        vp.ScreenSpaceAA = q.ScreenSpaceAA;
+        // FXAA n'existe pas en mode compatibilité OpenGL : on le remplace par du MSAA 2×
+        bool fxaa = q.ScreenSpaceAA != Viewport.ScreenSpaceAAEnum.Disabled;
+        vp.Msaa3D = compat && fxaa && q.Msaa == Viewport.Msaa.Disabled ? Viewport.Msaa.Msaa2X : q.Msaa;
+        if (!compat) vp.ScreenSpaceAA = q.ScreenSpaceAA;
         float scale = GraphicsQuality.RenderScale;
         vp.Scaling3DScale = scale;
         // FSR 1 (plus net que l'étirement simple) quand on réduit la résolution, si le moteur de rendu le permet

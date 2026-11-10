@@ -128,6 +128,8 @@ public partial class GraphicsMenu : CanvasLayer
 
         GraphicsQuality.Changed += OnChanged;
         Sync();
+        // tests automatiques : --graphics ouvre le menu (capture d'écran)
+        if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--graphics") >= 0) CallDeferred(MethodName.Toggle);
     }
 
     public override void _ExitTree() => GraphicsQuality.Changed -= OnChanged;
