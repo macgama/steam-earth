@@ -89,11 +89,18 @@ WorldCover ; la neige saisonnière n'est pas encore simulée (seuls glaciers et 
 ## Collisions avec les décors
 
 `Obstacles.cs` : le personnage (mode marche) ne traverse plus les troncs d'arbres, les buissons ni les murs des
-bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle ou contour) avec une altitude de bas et
-de haut, rangée dans une grille d'environ 200 m et rattachée au nœud qui l'affiche (chunk d'arbres proche, tuile de
-bâtiments) : caché = ignoré, supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser
-quand les images sont lentes. Test : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,400 --walktest=120`
-(Berne, marche vers le nord jusqu'à un mur). Limites : cours intérieures pleines, pas encore de marche sur les toits.
+bâtiments ; il glisse le long. Chaque obstacle est une empreinte au sol (cercle, ou contour avec ses **cours
+intérieures**, qui restent praticables) avec une altitude de base et un toit. Les obstacles sont rangés dans une grille
+d'environ 200 m et rattachés au nœud qui les affiche (chunk d'arbres proche, tuile de bâtiments) : caché = ignoré,
+supprimé = retiré. Le déplacement est découpé en pas de 25 cm pour ne rien traverser quand les images sont lentes.
+
+- **Toits** : plats ou à pans (même pente que le maillage), on y marche comme sur le sol et on tombe en passant le bord.
+- **Escalade** : tenir **Espace** contre un mur (ou un tronc) fait grimper à 2,5 m/s jusqu'au toit. C'est aussi le
+  moyen d'entrer dans une cour fermée : monter, traverser le toit, redescendre.
+- **Caméra** : en vue arrière elle se rapproche pour ne pas passer derrière un mur ; en vol libre elle se pose sur les
+  toits et ne traverse plus les murs.
+- Tests : `-- --at=46.9469,7.444,2,0,-5 --build=46.947,7.444,300 --walktest=200` (Berne, marche vers un mur) ;
+  ajouter `--climb` pour escalader (le personnage monte à 12 m, traverse le toit et redescend de l'autre côté).
 
 ## Météo et heure réelles
 
