@@ -119,6 +119,41 @@ et sans laisser croire à un soutien de la NASA. Le shader du terrain (`shaders/
 et ne l'allume que du côté nuit de la planète ; près du sol, la lueur est atténuée et les fenêtres des bâtiments prennent le relais.
 La carte est régénérée par le workflow « Lumières des villes » (`tools/nightlights/build_nightlights.py`).
 
+## Océans : vagues, houle réelle et fonds marins
+
+| Atlantique Nord, houle réelle de 3 m | Côte basque | Vue d'avion (reflet du soleil) |
+|---|---|---|
+| ![](docs/ocean-atlantique.jpg) | ![](docs/ocean-cote.jpg) | ![](docs/ocean-avion.jpg) |
+
+- **Fonds marins** (`Bathymetry.cs`) : grille **GEBCO** (15″ ≈ 450 m, domaine public, usage commercial autorisé,
+  mention « GEBCO Compilation Group, GEBCO Grid »). Le workflow `.github/workflows/gebco.yml` télécharge la grille
+  (le site GEBCO n'est pas joignable partout, il l'est depuis GitHub Actions), la découpe en 64 COG de 30° × 30°
+  (`tools/bathymetry/`) et les publie dans la release `gebco`. Le jeu n'en lit que les morceaux utiles, comme le
+  relief Copernicus, avec la carte mondiale de base en attendant. À relancer seulement pour une nouvelle grille annuelle
+  (modifier `tools/bathymetry/VERSION` ou *Actions → Fonds marins GEBCO → Run workflow*).
+- **Surface de l'eau** (`ChunkBuilder.cs`, `Ocean.cs`, `shaders/ocean.gdshader`) : chaque chunk qui touche de l'eau
+  reçoit une surface au niveau de la mer (ou du lac), qui déborde un peu sous la plage : le rivage est l'intersection
+  avec le relief. Le relief, lui, descend jusqu'au fond GEBCO. Lacs et rivières gardent leur niveau mesuré (fond
+  supposé à 3 m, inconnu).
+- **Vagues** : somme de 16 à 64 vagues (selon la qualité) de Gerstner (déplacement des sommets + normales par pixel), construites à partir de
+  l'état de la mer réel au-dessus du joueur : **mer du vent + deux houles** (hauteur, période, direction) de
+  **NOAA GFS-Wave / WAVEWATCH III** (domaine public), plus le clapot et les rides poussés par le vent GFS local.
+  Les vecteurs d'onde sont sur une grille de pas 2π/8 192 m dans le repère de la planète : la phase est continue d'un
+  chunk à l'autre et précise en float partout sur la Terre. Les vagues s'amortissent sur les plages ; écume sur les
+  crêtes raides (selon le vent) et rouleaux près du rivage ; couleur selon la profondeur (sable, turquoise, bleu nuit).
+  En mer, le quadtree descend au niveau 17 (≈ 2,5 m) près de la surface pour que les vagues aient assez de sommets.
+- **Houle réelle** (`Waves.cs`) : `tools/ocean/build_waves.py` extrait de GFS-Wave 0,25° (AWS Open Data) la hauteur
+  totale, la mer du vent et les deux premières houles pour 28 h, à 0,5° (~7 Mo). Le workflow *Météo GFS* le publie
+  toutes les 6 h dans la release `weather-latest` (`waves.bin.gz`) ; fichier de secours `data/ocean/waves_fallback.bin.gz`.
+  Près des côtes, on prend le point de mer le plus proche. Le HUD affiche l'état de la mer (ligne « Océan »).
+- **Plonger** : en vol libre, au-dessus de la mer, C (ou A) descend sous la surface jusqu'au fond (brouillard bleu-vert,
+  lumière qui baisse avec la profondeur). En mode marche, l'eau reste une surface (la nage viendra plus tard).
+- **Bateaux** : `Ocean.HeightAt(position, t)` donne la hauteur des vagues affichées (même formule que le shader) ;
+  elle est branchée automatiquement sur `WaterSurface.Waves` quand les véhicules sont présents.
+- **Qualité** (`GraphicsQuality`) : Bas / Moyen / Élevé / Ultra → 16 / 32 / 48 / 64 vagues, maillage en mer de 5 m à 1,2 m
+  (`WaterWaves`, `WaterMaxLevel`, voir docs/QUALITE_GRAPHIQUE.md). Pas de réflexions en espace écran : le ciel est reflété
+  par la carte d'environnement, donc ça marche aussi en mode Compatibilité.
+
 ## Météo et heure réelles
 
 Le jeu est synchronisé avec la réalité : **heure UTC réelle** (position du Soleil calculée, jour/nuit) et

@@ -19,6 +19,12 @@ public sealed class ChunkData
     public Transform3D[] Conifers, Broadleaves, Bushes;
     public Color[] ConiferTints, BroadleafTints, BushTints;
     public bool VegetationCollides; // chunks proches (≤ 15 m) : troncs solides pour le personnage
+    // Surface de l'eau (mers et lacs), rendue par Ocean : null s'il n'y a pas d'eau dans le chunk
+    public Vector3[] WaterVertices, WaterNormals;
+    public Color[] WaterColors;
+    public Vector2[] WaterUV, WaterUV2;
+    public int[] WaterIndices;
+    public bool HasSea; // le chunk touche la mer : le quadtree peut le détailler davantage (vagues)
 }
 
 /// <summary>
@@ -40,6 +46,8 @@ public static class ChunkBuilder
         var wat = new bool[s * s];
         var hgt = new float[s * s];
         var cov = new byte[s * s];
+        var sea = new bool[s * s];
+        var surf = new float[s * s]; // altitude de la surface : eau (0 en mer, niveau du lac) ou sol
         double step = size / res;
 
         for (int j = 0; j < s; j++)
@@ -48,12 +56,26 @@ public static class ChunkBuilder
             double u = u0 + (i - 1) * step, v = v0 + (j - 1) * step;
             var d = Geo.CubeToSphere(face, u, v);
             Geo.ToLatLon(d, out double lat, out double lon);
-            float h = HeightProvider.Sample(lat, lon, spacing, out bool w, out bool pending, out byte cover);
+            float h = HeightProvider.Sample(lat, lon, spacing, out bool w, out bool pending, out byte cover, out bool sw);
             if (pending) incomplete = true;
-            if (w) h = Math.Max(h, 0f); // océans : surface au niveau de la mer
             int k = j * s + i;
-            dirs[k] = d; wat[k] = w; hgt[k] = h; cov[k] = cover;
-            pos[k] = d * (Geo.Radius + h);
+            float bed = h;
+            if (sw)
+            {
+                // mer : surface au niveau de la mer, fond GEBCO
+                bed = Bathymetry.SeabedHeight(lat, lon, spacing, out bool bp);
+                if (bp) incomplete = true;
+                surf[k] = 0;
+            }
+            else if (w)
+            {
+                // lac ou rivière : surface mesurée par le relief ; fond inconnu, on le creuse un peu sous la surface
+                surf[k] = h;
+                bed = h - LakeDepth;
+            }
+            else surf[k] = h;
+            dirs[k] = d; wat[k] = w; sea[k] = sw; hgt[k] = bed; cov[k] = cover;
+            pos[k] = d * (Geo.Radius + bed);
         }
 
         var centerDir = Geo.CubeToSphere(face, u0 + size / 2, v0 + size / 2);
@@ -76,7 +98,7 @@ public static class ChunkBuilder
             if (nn.Dot(dirs[k]) < 0) nn = -nn;
             norms[o] = nn.ToVector3();
             Geo.ToLatLon(dirs[k], out double lat, out double lon);
-            cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing);
+            cols[o] = wat[k] ? BedColor(surf[k] - hgt[k], sea[k]) : TerrainColor(hgt[k], false, (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing);
         }
 
         // Indices : on choisit l'ordre des sommets pour que la face avant regarde vers l'extérieur
@@ -122,14 +144,127 @@ public static class ChunkBuilder
             idx[t++] = p0; idx[t++] = s0; idx[t++] = p1; idx[t++] = p1; idx[t++] = s0; idx[t++] = s1;
         }
 
+        // Altitude moyenne de la surface (eau comprise) : le niveau de détail suit la surface de la mer, pas le fond
         double sum = 0;
-        for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
+        for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += surf[j * s + i];
         var data = new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        BuildWater(data, res, s, spacing, size, dirs, wat, sea, surf, hgt, center, centerDir, flip);
         if (spacing <= Vegetation.MaxSpacing) Vegetation.Scatter(data, face, u0, v0, size, res, spacing, hgt, wat, s, center);
         return data;
     }
 
-    static readonly Color Ocean = new(0.06f, 0.17f, 0.32f);
+    /// <summary>Profondeur supposée des lacs et rivières (m) : leur fond n'est pas connu.</summary>
+    const float LakeDepth = 3f;
+
+    /// <summary>
+    /// Surface de l'eau du chunk : même grille que le relief, au niveau de la mer (ou du lac), sur toutes les cases
+    /// qui touchent de l'eau. Elle déborde un peu sous la plage : l'intersection avec le relief dessine le rivage.
+    /// </summary>
+    static void BuildWater(ChunkData data, int res, int s, double spacing, double size, Vec3d[] dirs, bool[] wat, bool[] sea,
+        float[] surf, float[] hgt, Vec3d center, Vec3d centerDir, bool flip)
+    {
+        int n = res + 1;
+        bool any = false;
+        for (int j = 1; j <= n && !any; j++) for (int i = 1; i <= n; i++) if (wat[j * s + i]) { any = true; break; }
+        if (!any) return;
+
+        // Niveau de l'eau de chaque sommet ; un sommet à terre prend celui de l'eau voisine (NaN : pas d'eau autour)
+        var level = new float[n * n];
+        var isSea = new bool[n * n];
+        bool hasSea = false;
+        for (int j = 0; j < n; j++)
+        for (int i = 0; i < n; i++)
+        {
+            int k = (j + 1) * s + (i + 1);
+            float lv = float.NaN; bool sv = false;
+            if (wat[k]) { lv = surf[k]; sv = sea[k]; }
+            else
+            {
+                for (int dj = -1; dj <= 1; dj++)
+                for (int di = -1; di <= 1; di++)
+                {
+                    int kk = k + dj * s + di;
+                    if (!wat[kk]) continue;
+                    if (sea[kk]) { lv = 0; sv = true; }
+                    else if (!sv && (float.IsNaN(lv) || surf[kk] > lv)) lv = surf[kk];
+                }
+            }
+            level[j * n + i] = lv; isSea[j * n + i] = sv;
+            if (sv) hasSea = true;
+        }
+
+        // Centre du chunk modulo la période des vagues (en double), voir shaders/ocean.gdshader
+        double P = Ocean.Period;
+        double Mod(double x) => x - Math.Floor(x / P) * P;
+        var cm = new Vector3((float)Mod(center.X), (float)Mod(center.Y), (float)Mod(center.Z));
+        float spacingCode = (float)Math.Clamp((Math.Log2(Math.Max(spacing, 0.07)) + 4) / 20, 0, 1);
+
+        int border = 4 * res;
+        var verts = new Vector3[n * n + border];
+        var norms = new Vector3[n * n + border];
+        var cols = new Color[n * n + border];
+        var uv = new Vector2[n * n + border];
+        var uv2 = new Vector2[n * n + border];
+        for (int j = 0; j < n; j++)
+        for (int i = 0; i < n; i++)
+        {
+            int o = j * n + i, k = (j + 1) * s + (i + 1);
+            float lv = float.IsNaN(level[o]) ? surf[k] : level[o];
+            verts[o] = (dirs[k] * (Geo.Radius + lv) - center).ToVector3();
+            norms[o] = dirs[k].ToVector3();
+            cols[o] = new Color(isSea[o] ? 1 : 0, spacingCode, 0, 1);
+            uv[o] = new Vector2(cm.X, cm.Y);
+            uv2[o] = new Vector2(cm.Z, lv - hgt[k]); // profondeur (négative à terre)
+        }
+
+        var idx = new System.Collections.Generic.List<int>(res * res * 6);
+        for (int j = 0; j < res; j++)
+        for (int i = 0; i < res; i++)
+        {
+            int a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+            bool w = wat[(j + 1) * s + i + 1] || wat[(j + 1) * s + i + 2] || wat[(j + 2) * s + i + 1] || wat[(j + 2) * s + i + 2];
+            if (!w) continue;
+            if (!flip) { idx.Add(a); idx.Add(b); idx.Add(c); idx.Add(b); idx.Add(d); idx.Add(c); }
+            else { idx.Add(a); idx.Add(c); idx.Add(b); idx.Add(b); idx.Add(c); idx.Add(d); }
+        }
+        if (idx.Count == 0) return;
+
+        // Jupes : bord de la surface abaissé (masque les fentes entre chunks de niveaux différents, vagues comprises)
+        var ring = new int[border];
+        int r = 0;
+        for (int i = 0; i < res; i++) ring[r++] = i;
+        for (int j = 0; j < res; j++) ring[r++] = j * n + res;
+        for (int i = res; i > 0; i--) ring[r++] = res * n + i;
+        for (int j = res; j > 0; j--) ring[r++] = j * n;
+        int sb = n * n;
+        var down = (-centerDir * (12.0 + size * Geo.Radius * 0.002)).ToVector3();
+        for (int q = 0; q < border; q++)
+        {
+            int p = ring[q];
+            verts[sb + q] = verts[p] + down;
+            norms[sb + q] = norms[p]; cols[sb + q] = cols[p]; uv[sb + q] = uv[p]; uv2[sb + q] = uv2[p];
+        }
+        for (int q = 0; q < border; q++)
+        {
+            int p0 = ring[q], p1 = ring[(q + 1) % border], s0 = sb + q, s1 = sb + (q + 1) % border;
+            if (float.IsNaN(level[p0]) || float.IsNaN(level[p1])) continue;
+            idx.Add(p0); idx.Add(p1); idx.Add(s0); idx.Add(p1); idx.Add(s1); idx.Add(s0);
+        }
+
+        data.WaterVertices = verts; data.WaterNormals = norms; data.WaterColors = cols;
+        data.WaterUV = uv; data.WaterUV2 = uv2; data.WaterIndices = idx.ToArray();
+        data.HasSea = hasSea;
+    }
+
+    /// <summary>Couleur du fond sous l'eau : sable près des côtes, vase sombre au large.</summary>
+    static Color BedColor(float depth, bool sea)
+    {
+        if (!sea) return new Color(0.30f, 0.28f, 0.20f);
+        float t = Math.Clamp(depth / 60f, 0, 1);
+        return new Color(0.66f, 0.60f, 0.45f).Lerp(new Color(0.24f, 0.24f, 0.22f), t);
+    }
+
+    static readonly Color OceanColor = new(0.06f, 0.17f, 0.32f);
     static readonly Color Lake = new(0.10f, 0.25f, 0.40f);
     static readonly Color Lowland = new(0.24f, 0.36f, 0.15f);
     static readonly Color Forest = new(0.15f, 0.25f, 0.11f);
@@ -168,7 +303,7 @@ public static class ChunkBuilder
     /// <summary>Couleur du sol : classe WorldCover si connue, sinon estimation selon altitude, pente et latitude.</summary>
     static Color TerrainColor(float h, bool water, float flatness, double lat, double lon, byte cover, double spacing)
     {
-        if (water) return h <= 0.5f ? Ocean : Lake;
+        if (water) return h <= 0.5f ? OceanColor : Lake;
         double alat = Math.Abs(lat);
         float snowLine = (float)Math.Max(300, 5200 - 55 * Math.Max(0, alat - 15));
         float treeLine = snowLine - 1000;
