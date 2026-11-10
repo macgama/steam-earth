@@ -18,6 +18,7 @@ public partial class Planet : Node3D
     [Export] public int Resolution = 32;        // quads par côté de chunk
     // Réglés par le niveau de qualité graphique (GraphicsQuality) :
     public int HdMaxLevel = 19;                 // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
+    public int SeaMaxLevel = 17;                // en mer, près de la surface : niveau 17 ≈ 2,5 m (vagues)
     public double SplitFactor = 1.6;            // plus grand = plus de détail, plus de chunks
     public int MaxConcurrentBuilds = 6;
 
@@ -87,6 +88,7 @@ public partial class Planet : Node3D
         public bool Requested, Ready, Dead;
         public bool Incomplete; // construit avec des données provisoires (téléchargement en cours)
         public bool? Hd;        // le chunk touche une zone haute définition (calculé au besoin)
+        public bool Sea;        // le chunk touche la mer
         public int BuiltVersion;
     }
 
@@ -108,6 +110,7 @@ public partial class Planet : Node3D
     {
         SplitFactor = q.TerrainSplitFactor;
         HdMaxLevel = Math.Max(MaxLevel, q.TerrainHdMaxLevel);
+        SeaMaxLevel = Math.Max(MaxLevel, q.WaterMaxLevel);
         MaxConcurrentBuilds = q.TerrainBuildThreads;
         // Textures du sol : 0 = aucune ; 1 = une échelle, proches ; 2 = deux échelles, 800 m ; 3 = deux échelles, 1,5 km
         int gd = Math.Clamp(q.GroundDetail, 0, 3);
@@ -177,13 +180,17 @@ public partial class Planet : Node3D
             {
                 // Reconstruction (données fines arrivées) : on remplace le maillage sur place.
                 item.node.Mesh.Mesh = mesh;
+                item.node.Sea = item.data.HasSea;
                 Vegetation.Attach(item.node.Mesh, item.data);
+                Ocean.Attach(item.node.Mesh, item.data);
                 continue;
             }
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _material, Visible = false };
             mi.CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Terrain);
             AddChild(mi);
             Vegetation.Attach(mi, item.data);
+            Ocean.Attach(mi, item.data);
+            item.node.Sea = item.data.HasSea;
             item.node.Mesh = mi;
             item.node.MeanHeight = item.data.MeanHeight;
             item.node.Ready = true;
@@ -204,6 +211,7 @@ public partial class Planet : Node3D
         _material.SetShaderParameter("planet_center", Basis * (-cam).ToVector3());
         _material.SetShaderParameter("planet_basis_inv", Basis.Inverse());
         _material.SetShaderParameter("lights_strength", (float)Math.Clamp((h - 200) / 4000, 0.12, 1.0));
+        _camAlt = cam.Length() - Geo.Radius;
         _horizon = Math.Sqrt(h * (2 * Geo.Radius + h)) + 340_000; // + horizon d'un sommet de 9 km
         foreach (var r in _roots) Update(r, cam);
     }
@@ -227,11 +235,12 @@ public partial class Planet : Node3D
     }
 
     double _horizon;
+    double _camAlt;
 
     bool WantsSplit(QuadNode n, Vec3d cam)
     {
         if (n.Level >= HdMaxLevel) return false;
-        if (n.Level >= MaxLevel && !(n.Hd ??= TouchesHd(n))) return false;
+        if (n.Level >= MaxLevel && !(n.Hd ??= TouchesHd(n)) && !(n.Sea && n.Level < SeaMaxLevel && _camAlt < 300)) return false;
         // Distance au relief réel et non au niveau de la mer : sinon, à 3 000 m d'altitude,
         // le joueur serait « loin » de tous les chunks et le relief resterait grossier sous ses pieds.
         double dist = (cam - n.LodCenter).Length() - n.Edge * 0.75;

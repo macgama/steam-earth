@@ -141,13 +141,31 @@ public static class HeightProvider
 
     /// <summary>Idem, avec en plus la classe de couverture des sols (<see cref="LandCover"/>, 0 = inconnue).</summary>
     public static float Sample(double latDeg, double lonDeg, double spacing, out bool water, out bool pending, out byte cover)
+        => Sample(latDeg, lonDeg, spacing, out water, out pending, out cover, out _);
+
+    /// <summary>
+    /// Idem, avec <paramref name="sea"/> = true pour une eau au niveau de la mer (océans, mers, estuaires),
+    /// false pour un lac ou une rivière (eau à l'altitude rendue). En mer, la valeur rendue n'est pas le fond :
+    /// voir <see cref="Bathymetry.SeabedHeight"/>.
+    /// </summary>
+    public static float Sample(double latDeg, double lonDeg, double spacing, out bool water, out bool pending, out byte cover, out bool sea)
     {
+        float h = SampleCore(latDeg, lonDeg, spacing, out water, out pending, out cover, out bool openSea);
+        // Eau dont la surface est au niveau de la mer ; la mer Morte ou la Caspienne restent des lacs.
+        sea = water && (openSea || Math.Abs(h) < 2f);
+        return h;
+    }
+
+    static float SampleCore(double latDeg, double lonDeg, double spacing, out bool water, out bool pending, out byte cover, out bool openSea)
+    {
+        openSea = false;
         pending = false;
         float hb = SampleBase(latDeg, lonDeg);
         if (spacing >= BaseOnlySpacing)
         {
             water = hb <= 0;
             cover = LandCover.SampleBase(latDeg, lonDeg);
+            openSea = hb <= 0;
             if (cover == LandCover.Water) water = true;
             return hb;
         }
@@ -192,6 +210,7 @@ public static class HeightProvider
         }
         h = res == StreamedRaster.Result.Ok ? v : hb;
         bool ocean = res == StreamedRaster.Result.Absent; // pas de tuile Copernicus = mer
+        openSea = ocean && hb <= 0;
 
         water = WaterAt(latDeg, lonDeg, spacing, h, hb, ocean, ref pending, out cover);
         return h;
@@ -251,6 +270,9 @@ public static class HeightProvider
         return (float)h;
     }
 
+    /// <summary>Altitude (m) de la carte mondiale de base (~5 km, avec bathymétrie).</summary>
+    public static float BaseHeight(double latDeg, double lonDeg) => SampleBase(latDeg, lonDeg);
+
     static float SampleBase(double latDeg, double lonDeg)
     {
         double px = (lonDeg + 180) / 360 * _bw - 0.5;
@@ -261,6 +283,17 @@ public static class HeightProvider
         int y1 = Math.Clamp(y0 + 1, 0, _bh - 1); y0 = Math.Clamp(y0, 0, _bh - 1);
         double a = _base[y0 * _bw + x0], b = _base[y0 * _bw + x1], c = _base[y1 * _bw + x0], d = _base[y1 * _bw + x1];
         return (float)((a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty);
+    }
+
+    /// <summary>
+    /// Altitude du plus bas point atteignable en vol libre : le fond en mer (on peut plonger), la surface ailleurs
+    /// (sol, lacs et rivières).
+    /// </summary>
+    public static float FloorHeight(double latDeg, double lonDeg, double spacing = 0.5)
+    {
+        float h = Sample(latDeg, lonDeg, spacing, out bool water, out _, out _, out bool sea);
+        if (sea) return Bathymetry.SeabedHeight(latDeg, lonDeg, Math.Max(spacing, 30), out _);
+        return water ? Math.Max(h, 0) : h;
     }
 
     /// <summary>Altitude de la surface praticable (l'eau compte comme surface).</summary>
