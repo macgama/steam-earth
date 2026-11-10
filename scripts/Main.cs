@@ -21,7 +21,7 @@ public partial class Main : Node3D
     Atmosphere _atmosphere;
     string _shotPath;
     static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
-    int _frames, _idleFrames;
+    int _frames, _idleFrames, _minFrames = 30;
 
     public override void _Ready()
     {
@@ -69,14 +69,25 @@ public partial class Main : Node3D
         AddChild(layer);
 
         int view = 1;
+        bool walk = false;
+        double[] at = null;
         foreach (var a in OS.GetCmdlineUserArgs())
         {
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
+            if (a == "--walk") walk = true;
+            if (a == "--autowalk") { walk = true; _camera.AutoForward = true; _minFrames = 600; }
+            if (a.StartsWith("--at="))
+            {
+                var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
+                at = p;
+            }
             if (a.StartsWith("--hours=")) _atmosphere.TimeOffsetHours = double.Parse(a.Substring(8), System.Globalization.CultureInfo.InvariantCulture);
         }
         var key = new InputEventKey { PhysicalKeycode = Key.Key1 + (view - 1), Pressed = true };
         _camera._UnhandledInput(key);
+        if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
+        if (walk) _camera.SetWalk(true);
     }
 
     public override void _Process(double delta)
@@ -94,17 +105,17 @@ public partial class Main : Node3D
         _hud.Text =
             $"Lat {lat:F4}°  Lon {lon:F4}°\n" +
             $"Altitude {alt:N0} m   Sol {_camera.GroundHeight:N0} m   Hauteur {alt - _camera.GroundHeight:N0} m\n" +
-            $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? "[MARCHE]" : "")}\n" +
-            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks}   en construction {_planet.PendingBuilds}   tuiles 30 m chargées {HeightProvider.LoadedTiles}/{HeightProvider.AvailableTiles}\n" +
+            $"Vitesse {_camera.Speed * 3.6:N0} km/h  ×{_camera.SpeedMultiplier:F2}  {(_camera.Walk ? (_camera.Grounded ? "[MARCHE]" : "[MARCHE, en l'air]") : "")}\n" +
+            $"Chunks {_planet.VisibleChunks} visibles / {_planet.TotalChunks} (niveau max {_planet.DeepestLevel})   en construction {_planet.PendingBuilds}   tuiles 30 m chargées {HeightProvider.LoadedTiles}/{HeightProvider.AvailableTiles}\n" +
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher  1-9 lieux  +/− heure  R heure réelle";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court)  1-9 lieux  +/− heure  R heure réelle";
 
         if (_shotPath != null)
         {
             _idleFrames = _planet.Idle ? _idleFrames + 1 : 0;
-            if ((_frames > 30 && _idleFrames > 20) || _frames > 4000)
+            if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000)
             {
                 var img = GetViewport().GetTexture().GetImage();
                 img.SavePng(_shotPath);

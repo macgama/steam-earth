@@ -10,7 +10,8 @@ public sealed class ChunkData
     public Vector3[] Normals;
     public Color[] Colors;
     public int[] Indices;
-    public Vec3d Center; // centre du chunk dans le repère planète (double)
+    public Vec3d Center; // centre du chunk dans le repère planète (double), au niveau de la mer
+    public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
 }
 
 /// <summary>
@@ -104,7 +105,9 @@ public static class ChunkBuilder
             idx[t++] = p0; idx[t++] = s0; idx[t++] = p1; idx[t++] = p1; idx[t++] = s0; idx[t++] = s1;
         }
 
-        return new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center };
+        double sum = 0;
+        for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
+        return new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n) };
     }
 
     static readonly Color Ocean = new(0.06f, 0.17f, 0.32f);
