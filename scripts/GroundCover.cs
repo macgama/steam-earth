@@ -82,15 +82,25 @@ public partial class GroundCover : Node3D
         st.Begin(Mesh.PrimitiveType.Triangles);
         var dark = new Color(0.35f, 0.45f, 0.30f);
         var light = new Color(1.0f, 1.0f, 0.85f);
-        for (int k = 0; k < 3; k++)
+        // une touffe = 9 brins fins et pointus, inclinés vers l'extérieur (repère : rayon ~0,15, hauteur 1)
+        var rnd = new Random(7);
+        for (int k = 0; k < 9; k++)
         {
-            float a = k * Mathf.Pi / 3;
-            var d = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * 0.22f;
-            var n = new Vector3(-Mathf.Sin(a), 0.6f, Mathf.Cos(a)).Normalized();
-            Vector3 p0 = -d, p1 = d, p2 = d * 0.35f + Vector3.Up, p3 = -d * 0.35f + Vector3.Up;
+            float a = k * Mathf.Tau / 9 + (float)rnd.NextDouble() * 0.6f;
+            var outDir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
+            var side = new Vector3(-outDir.Z, 0, outDir.X);
+            var root = outDir * (0.02f + 0.08f * (float)rnd.NextDouble());
+            float hb = 0.6f + 0.4f * (float)rnd.NextDouble();
+            float lean = 0.15f + 0.3f * (float)rnd.NextDouble();
+            float w = 0.035f;
+            var mid = root + outDir * lean * 0.35f + Vector3.Up * hb * 0.55f;
+            var tip = root + outDir * lean + Vector3.Up * hb;
+            var n = (outDir * 0.3f + Vector3.Up).Normalized();
             void V(Vector3 p, Color c) { st.SetNormal(n); st.SetColor(c); st.AddVertex(p); }
-            V(p0, dark); V(p1, dark); V(p2, light);
-            V(p0, dark); V(p2, light); V(p3, light);
+            var midC = dark.Lerp(light, 0.55f);
+            V(root - side * w, dark); V(root + side * w, dark); V(mid + side * w * 0.7f, midC);
+            V(root - side * w, dark); V(mid + side * w * 0.7f, midC); V(mid - side * w * 0.7f, midC);
+            V(mid - side * w * 0.7f, midC); V(mid + side * w * 0.7f, midC); V(tip, light);
         }
         var mesh = st.Commit();
         mesh.SurfaceSetMaterial(0, _grassMat);
@@ -245,8 +255,8 @@ public partial class GroundCover : Node3D
             var zr = xr.Cross(up);
             if (isGrass)
             {
-                float height = 0.18f + r3 * 0.45f;
-                float width = 0.8f + r4 * 0.6f;
+                float height = 0.12f + r3 * 0.3f;
+                float width = 0.9f + r4 * 0.8f;
                 var basis = new Basis(xr * width, up * height, zr * width);
                 grass.Add(new Transform3D(basis, (p - origin).ToVector3()));
                 // teinte : vert de prairie, plus jaune en culture et en broussaille
@@ -268,8 +278,8 @@ public partial class GroundCover : Node3D
                 var basis = new Basis(xr * size * (0.8f + r2 * 0.5f), up * size * squash, zr * size);
                 var pos = p - dir * (size * 0.15); // un peu enterré
                 rocks.Add(new Transform3D(basis, (pos - origin).ToVector3()));
-                float g = 0.32f + r4 * 0.15f;
-                rt.Add(new Color(g * 1.02f, g, g * 0.94f));
+                float g = 0.15f + r4 * 0.1f;
+                rt.Add(new Color(g * 1.05f, g, g * 0.9f));
                 if (size * squash * 0.55f > Obstacles.StepUp)
                     solid.Add(Obstacles.Shape.Circle(pos, size * 0.45, h - 0.2, h + size * squash * 0.55));
             }

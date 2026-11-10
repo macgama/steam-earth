@@ -53,7 +53,7 @@ public static class Vegetation
             case Species.Larch:
                 return season switch
                 {
-                    1 => new Color(0.62f, 0.45f, 0.12f),     // mélèzes dorés
+                    1 => new Color(0.42f, 0.29f, 0.07f),     // mélèzes dorés
                     2 => new Color(0.30f, 0.25f, 0.20f),     // sans aiguilles
                     3 => new Color(0.30f, 0.42f, 0.16f),
                     _ => new Color(0.20f, 0.32f, 0.13f),
@@ -65,7 +65,7 @@ public static class Vegetation
                 if (tropic) return new Color(0.12f, 0.29f, 0.08f);
                 return season switch
                 {
-                    1 => r < 0.35f ? new Color(0.62f, 0.30f, 0.08f) : r < 0.7f ? new Color(0.58f, 0.45f, 0.12f) : new Color(0.36f, 0.33f, 0.12f),
+                    1 => r < 0.35f ? new Color(0.36f, 0.16f, 0.05f) : r < 0.7f ? new Color(0.38f, 0.26f, 0.07f) : new Color(0.25f, 0.23f, 0.09f),
                     2 => new Color(0.30f, 0.26f, 0.21f),     // branches nues
                     3 => new Color(0.30f, 0.45f, 0.15f),
                     _ => sp == Species.Birch ? new Color(0.24f, 0.36f, 0.12f) : new Color(0.19f, 0.31f, 0.11f),

@@ -26,5 +26,5 @@ void fragment() {
 	vec3 c = use_instance_color ? COLOR.rgb : trunk_color;
 	ALBEDO = c;
 	ROUGHNESS = 0.92;
-	if (use_instance_color) BACKLIGHT = c * 0.4;
+	if (use_instance_color) BACKLIGHT = c * 0.25;
 }
