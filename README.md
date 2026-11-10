@@ -34,6 +34,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | T | afficher / masquer routes, chemins et voies ferrées |
 | N | afficher / masquer les noms des villes, villages et rues |
 | P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
+| H | près d'un arrêt en Suisse : tableau des départs (1–9 choisir, ↑/↓ plus tard) ; en voyage : descendre au prochain arrêt |
 | M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
@@ -215,7 +216,33 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 |---|---|---|
 | ![](docs/transports-berne.jpg) | ![](docs/transports-geneve.jpg) | ![](docs/aeroport-zurich.jpg) |
 
-Les lignes et horaires (trains, bus, avions qui circulent) ne sont pas encore là : voir « Limites connues ».
+### Voyager en transports publics suisses, aux horaires réels
+
+Tous les trains, trams, bus, cars postaux, bateaux, funiculaires et téléphériques de Suisse, avec leur horaire
+officiel (**opentransportdata.swiss**, GTFS, usage commercial autorisé avec mention de la source) :
+
+1. Près d'un arrêt (≤ 250 m), **H** affiche les prochains départs de tout le pôle (la gare et les arrêts de bus et
+   de tram autour), à l'heure suisse du jeu : l'heure réelle, ou décalée avec + / −.
+2. **1–9** pour choisir. On attend sur place : le véhicule arrive quelques minutes avant, et l'on monte
+   automatiquement à l'heure du départ si l'on est à moins de 300 m. **H** pendant l'attente : renoncer.
+3. Le voyage dure le **temps réel** de l'horaire (Berne → Fribourg : 33 min). La caméra suit le véhicule
+   (molette = distance, V = vue du passager) ; le panneau montre les prochains arrêts. **H** : descendre au prochain
+   arrêt (on descend aussi au terminus), on repart à pied. + / − avancent l'heure : le voyage avance d'autant.
+
+- `tools/transport/build_timetable.py` réduit le GTFS suisse (2,4 Go, 1,9 million de courses par an) à un fichier de
+  12 Mo : les courses qui desservent les mêmes arrêts avec les mêmes temps de parcours partagent un « motif ».
+- Workflow GitHub Actions « Horaires transports suisses » : chaque jeudi, nouvelle version dans la release
+  `timetable-latest` ; le jeu la télécharge (au plus une fois par jour) et la garde en cache (`user://cache/`).
+- `Data/Timetable.cs` : lecture et recherche des départs ; `TransitRide.cs` : tableau, attente, voyage, descente.
+
+Limites de cette première version : le véhicule va **en ligne droite** d'un arrêt à l'autre en suivant le relief
+(pas encore sur les vrais rails, ni dans les tunnels) et c'est une simple boîte ; pas encore de retards en temps
+réel ni d'autres véhicules qui circulent. Prochaine étape : tracés réels des lignes (pfaedle + OpenStreetMap dans
+le workflow), puis retards en direct (GTFS-RT d'opentransportdata.swiss, clé gratuite).
+
+| Tableau des départs, gare de Berne | Dans le S1 vers Fribourg |
+|---|---|
+| ![](docs/departs-berne.jpg) | ![](docs/train-s1.jpg) |
 ## Menu de départ : commencer n'importe où
 
 Au lancement (et ensuite avec **M**), le joueur choisit où commencer :
@@ -289,6 +316,7 @@ textures de façades.
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
 | `data/geo/cities.tsv.gz` | Natural Earth 1:10m populated places (domaine public) | 7 342 villes |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
+| Horaires suisses (release `timetable-latest`) | opentransportdata.swiss, GTFS (usage libre, mention de la source obligatoire) | toutes les courses de l'année |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
 Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
@@ -318,9 +346,8 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 - Couleurs par sommet provisoires → textures + shader (herbe, roche, neige selon pente et altitude).
 - Relief plus fin que 30 m : pays par pays (Suisse 0,5 m avec swissALTI3D, France 1 m avec le RGE ALTI…).
 - Copernicus n'a pas de fichier pour l'Arménie et l'Azerbaïdjan (relief à ~5 km là-bas pour l'instant).
-- Transports qui circulent : tracés des lignes (relations OSM `route=bus/tram/train/subway/ferry`, ODbL) et horaires
-  réels (GTFS : opentransportdata.swiss pour la Suisse, transport.data.gouv.fr pour la France…, licence à vérifier
-  flux par flux pour un jeu vendu). Avions : OurAirports + lignes aériennes à reconstituer (pas de source gratuite
+- Transports : tracés réels des lignes suisses, retards en direct, puis autres pays selon la ville de départ des
+  joueurs (GTFS : transport.data.gouv.fr pour la France…, licence à vérifier flux par flux pour un jeu vendu). Avions : OurAirports + lignes aériennes à reconstituer (pas de source gratuite
   d'horaires mondiaux utilisable commercialement ; OpenSky est réservé au non commercial).
 - Océan = surface plate colorée → shader d'eau, vagues, physique de flottaison.
 - Atmosphère : ciel procédural Godot → diffusion atmosphérique vue de l'espace.
