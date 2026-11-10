@@ -34,7 +34,7 @@ public partial class VehicleManager : CanvasLayer
     {
         Layer = 2;
         ProcessPriority = 100; // après la caméra : les véhicules garés sont placés par rapport à sa position de l'image
-        _world = new Node3D { Name = "VehicleNodes" };
+        _world = new Node3D { Name = "VehicleNodes", ProcessMode = ProcessModeEnum.Pausable }; // arrêtés pendant la pause
         GetParent().CallDeferred(Node.MethodName.AddChild, _world);
 
         Vehicle.Wind = WindAt;

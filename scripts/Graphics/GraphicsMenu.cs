@@ -26,6 +26,8 @@ public partial class GraphicsMenu : CanvasLayer
     static readonly int[] FpsChoices = { 0, 30, 60, 120, 144, 240 };
 
     public bool IsOpen => _panel.Visible;
+    /// <summary>Le menu vient d'être fermé (les Options s'affichent à nouveau s'il a été ouvert depuis elles).</summary>
+    public event Action Closed;
 
     public override void _Ready()
     {
@@ -170,6 +172,7 @@ public partial class GraphicsMenu : CanvasLayer
             else Camera.InputBlocked = _wasBlocked;
         }
         if (_panel.Visible) Input.MouseMode = Input.MouseModeEnum.Visible;
+        else Closed?.Invoke();
     }
 
     public override void _Process(double delta)
