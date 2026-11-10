@@ -60,7 +60,7 @@ public partial class Weather : Node
     public override void _Ready()
     {
         // Le cache (plus récent) d'abord, sinon le fichier de secours
-        if (!TryLoad(Godot.FileAccess.GetFileAsBytes(CachePath), "cache")) TryLoad(Godot.FileAccess.GetFileAsBytes(FallbackPath), "secours");
+        if (!(Godot.FileAccess.FileExists(CachePath) && TryLoad(Godot.FileAccess.GetFileAsBytes(CachePath), "cache"))) TryLoad(Godot.FileAccess.GetFileAsBytes(FallbackPath), "secours");
         _http = new HttpRequest { MaxRedirects = 8, Timeout = 60 };
         AddChild(_http);
         _http.RequestCompleted += OnDownloaded;

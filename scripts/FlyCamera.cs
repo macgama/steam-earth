@@ -10,7 +10,8 @@ namespace SteamEarth;
 ///
 /// Commandes : clic gauche = capturer la souris, Échap = libérer,
 /// ZQSD / WASD = avancer, Espace / E = monter, C / A = descendre,
-/// Maj = ×8, molette = multiplicateur de vitesse, 1–9 = lieux prédéfinis, F = marcher (collé au sol).
+/// Maj = ×8, molette = multiplicateur de vitesse, 1–9 = lieux prédéfinis,
+/// F = marcher (gravité ; ZQSD pour marcher, Maj pour courir, Espace pour sauter).
 /// </summary>
 public partial class FlyCamera : Camera3D
 {
@@ -58,7 +59,7 @@ public partial class FlyCamera : Camera3D
             switch (k.PhysicalKeycode)
             {
                 case Key.Escape: Input.MouseMode = Input.MouseModeEnum.Visible; break;
-                case Key.F: Walk = !Walk; break;
+                case Key.F: SetWalk(!Walk); break;
                 case Key.Key1: Teleport(46.70, 7.80, 1500, 120, -12); break;   // Interlaken, vers l'Eiger
                 case Key.Key2: Teleport(46.03, 7.70, 600, 200, 5); break;     // Zermatt, vers le Cervin
                 case Key.Key3: Teleport(46.45, 6.55, 3000, 90, -10); break;    // Lac Léman
@@ -73,6 +74,16 @@ public partial class FlyCamera : Camera3D
         }
     }
 
+    // --- Marche
+    public const double EyeHeight = 1.7;
+    public const double WalkSpeed = 4.0;    // m/s (petit trot)
+    public const double SprintSpeed = 9.0;  // m/s avec Maj
+    public const double JumpSpeed = 4.5;    // m/s → saut d'environ 1 m
+    public const double Gravity = 9.81;
+    public bool Grounded { get; private set; }
+    public bool AutoForward; // test automatique : avance seul (argument --autowalk)
+    double _verticalSpeed;
+
     public override void _Process(double delta)
     {
         var up = PosD.Normalized();
@@ -84,28 +95,59 @@ public partial class FlyCamera : Camera3D
         var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
         var forward = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
         var right = heading.Cross(up).Normalized();
+        bool shift = Input.IsPhysicalKeyPressed(Key.Shift) || AutoForward;
 
         var move = new Vec3d(0, 0, 0);
-        if (Input.IsPhysicalKeyPressed(Key.W)) move += Walk ? heading : forward;   // W = Z en AZERTY (touche physique)
+        if (Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += Walk ? heading : forward;   // W = Z en AZERTY (touche physique)
         if (Input.IsPhysicalKeyPressed(Key.S)) move -= Walk ? heading : forward;
         if (Input.IsPhysicalKeyPressed(Key.D)) move += right;
         if (Input.IsPhysicalKeyPressed(Key.A)) move -= right;                      // A = Q en AZERTY
-        if (!Walk && (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E))) move += up;
-        if (!Walk && (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q))) move -= up;
 
-        double baseSpeed = Walk ? 5.0 : Math.Clamp(agl, 5, 5_000_000);
-        if (Input.IsPhysicalKeyPressed(Key.Shift)) baseSpeed *= 8;
-        Speed = baseSpeed * SpeedMultiplier;
-        if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
+        if (Walk)
+        {
+            // Déplacement horizontal, puis gravité vers le centre de la Terre
+            Speed = (shift ? SprintSpeed : WalkSpeed) * SpeedMultiplier;
+            if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
+            if (Grounded && Input.IsPhysicalKeyPressed(Key.Space)) { _verticalSpeed = JumpSpeed; Grounded = false; }
+            _verticalSpeed -= Gravity * delta;
+            PosD += PosD.Normalized() * (_verticalSpeed * delta);
+        }
+        else
+        {
+            if (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E)) move += up;
+            if (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q)) move -= up;
+            double baseSpeed = Math.Clamp(agl, 5, 5_000_000);
+            if (shift) baseSpeed *= 8;
+            Speed = baseSpeed * SpeedMultiplier;
+            if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
+            _verticalSpeed = 0;
+        }
 
-        // Contrainte au sol
+        // Contrainte au sol : les yeux jamais sous 1,7 m au-dessus du relief
         up = PosD.Normalized();
         Geo.ToLatLon(up, out lat, out lon);
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
-        double minAlt = GroundHeight + 1.7;
-        if (Walk || Altitude < minAlt) PosD = up * (Geo.Radius + minAlt);
+        double eye = GroundHeight + EyeHeight;
+        double above = Altitude - eye;
+        // En marchant, on « colle » au sol dans les descentes douces plutôt que de décoller à chaque pas
+        bool snap = Walk && Grounded && _verticalSpeed <= 0 && above < Math.Max(0.3, Speed * delta * 1.5);
+        if (above < 0 || snap)
+        {
+            PosD = up * (Geo.Radius + eye);
+            if (Walk) { _verticalSpeed = 0; Grounded = true; }
+        }
+        else if (Walk && above > 0.05) Grounded = false;
+        if (!Walk) Grounded = above < 0.05;
 
         UpdateTransform();
+    }
+
+    /// <summary>Passe en marche (F) : on tombe jusqu'au sol si on est en l'air.</summary>
+    public void SetWalk(bool walk)
+    {
+        Walk = walk;
+        _verticalSpeed = 0;
+        Grounded = false;
     }
 
     /// <summary>Rotation planète → Godot : est → +X, haut → +Y, nord → −Z.</summary>
@@ -125,6 +167,6 @@ public partial class FlyCamera : Camera3D
         double alt = Math.Max(0, Altitude);
         double horizon = Math.Sqrt(alt * (2 * Geo.Radius + alt)) + 400_000;
         Near = (float)Math.Clamp(h * 0.002, 0.1, 2000);
-        Far = (float)Math.Min(horizon + Geo.Radius, 60_000_000);
+        Far = (float)Math.Min(horizon * 1.1 + 50_000, 60_000_000);
     }
 }
