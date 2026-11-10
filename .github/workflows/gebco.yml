@@ -1,0 +1,53 @@
+# Fonds marins : convertit la grille GEBCO (bathymétrie mondiale ~450 m, domaine public) en fichiers COG
+# publiés dans la release « gebco », que le jeu lit à la demande (scripts/Bathymetry.cs).
+# À relancer seulement quand une nouvelle grille GEBCO sort (une fois par an) : modifier tools/bathymetry/VERSION
+# ou lancer le workflow à la main (Actions → Fonds marins GEBCO → Run workflow).
+name: Fonds marins GEBCO
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Année de la grille GEBCO"
+        default: "2025"
+  push:
+    paths:
+      - tools/bathymetry/VERSION
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gebco
+  cancel-in-progress: false
+
+jobs:
+  gebco:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/bathymetry
+      - name: Faire de la place sur le disque
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo mkdir -p /mnt/gebco_work && sudo chown "$USER" /mnt/gebco_work || true
+          df -h / /mnt
+      - run: sudo apt-get update && sudo apt-get install -y gdal-bin python3-gdal python3-numpy unzip
+      - name: Télécharger et découper GEBCO
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          [ -n "$YEAR" ] || YEAR="$(cat tools/bathymetry/VERSION)"
+          WORK=/mnt/gebco_work bash tools/bathymetry/build_gebco.sh "$YEAR" out || \
+            WORK=$HOME/gebco_work bash tools/bathymetry/build_gebco.sh "$YEAR" out
+          du -sh out; ls -la out | head -80
+      - name: Publier dans la release gebco
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ATTR=$(python3 -c "import json;print(json.load(open('out/gebco_info.json'))['attribution'])")
+          gh release view gebco >/dev/null 2>&1 || \
+            gh release create gebco --title "Fonds marins (GEBCO)" --latest=false \
+              --notes "Bathymétrie mondiale découpée en COG de 30° pour le jeu (scripts/Bathymetry.cs). Source : $ATTR, domaine public. Ne pas supprimer : le jeu lit ces fichiers à la demande."
+          gh release upload gebco out/*.tif out/gebco_info.json --clobber

@@ -31,6 +31,8 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Résolution 3D par défaut | 80 % | 100 % | 100 % | 100 % |
 | Nuages (subdivisions) / pluie et neige | 16 / 30 % | 32 / 60 % | 48 / 100 % | 96 / 150 % |
 | Distance générale (`DrawDistanceScale`) | 0,5 | 0,75 | 1 | 1,4 |
+| Eau : vagues additionnées (`WaterWaves`) | 16 | 32 | 48 | 64 |
+| Eau : maillage en mer (`WaterMaxLevel`) | 5 m | 5 m | 2,5 m | 1,2 m |
 
 « Élevé » correspond au rendu d'avant l'ajout des niveaux.
 
