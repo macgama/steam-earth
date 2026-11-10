@@ -28,6 +28,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
 | R | revenir à l'heure réelle |
+| J | jour permanent : le soleil reste haut partout (l’heure et la météo restent réelles ; réglage mémorisé) |
 | Tab (ou bouton « Pays ») | menu des pays : clic = 500 m au-dessus de la capitale, recherche par nom |
 | B | afficher / masquer frontières et capitales |
 | T | afficher / masquer routes, chemins et voies ferrées |
