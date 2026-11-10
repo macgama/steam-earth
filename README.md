@@ -123,6 +123,10 @@ La carte est régénérée par le workflow « Lumières des villes » (`tools/ni
 
 ## Véhicules : voiture, vélo, bateau, avion
 
+| Voiture près d'Interlaken | Vélo sur la Höhematte | Bateau sur le lac de Thoune (61 km/h) | Avion à 860 m au-dessus du lac |
+|---|---|---|---|
+| ![](docs/voiture.jpg) | ![](docs/velo.jpg) | ![](docs/bateau.jpg) | ![](docs/avion.jpg) |
+
 Touche **G** : on choisit un véhicule, il apparaît devant le personnage et on monte dedans. **E** pour descendre
 (à l'arrêt) ou remonter dans un véhicule garé à côté. Jusqu'à 8 véhicules restent garés dans le monde ; on ne
 traverse pas une voiture garée. La molette rapproche ou éloigne la caméra, la souris tourne autour du véhicule
