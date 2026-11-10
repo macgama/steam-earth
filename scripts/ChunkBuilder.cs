@@ -15,6 +15,9 @@ public sealed class ChunkData
     public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
     public bool Incomplete;   // des données fines étaient encore en téléchargement : à reconstruire
     public int DataVersion;   // version des données au moment de la construction
+    // Végétation (chunks les plus fins seulement) : transformations relatives au centre du chunk
+    public Transform3D[] Conifers, Broadleaves, Bushes;
+    public Color[] ConiferTints, BroadleafTints, BushTints;
 }
 
 /// <summary>
@@ -35,6 +38,7 @@ public static class ChunkBuilder
         var dirs = new Vec3d[s * s];
         var wat = new bool[s * s];
         var hgt = new float[s * s];
+        var cov = new byte[s * s];
         double step = size / res;
 
         for (int j = 0; j < s; j++)
@@ -43,11 +47,11 @@ public static class ChunkBuilder
             double u = u0 + (i - 1) * step, v = v0 + (j - 1) * step;
             var d = Geo.CubeToSphere(face, u, v);
             Geo.ToLatLon(d, out double lat, out double lon);
-            float h = HeightProvider.Sample(lat, lon, spacing, out bool w, out bool pending);
+            float h = HeightProvider.Sample(lat, lon, spacing, out bool w, out bool pending, out byte cover);
             if (pending) incomplete = true;
             if (w) h = Math.Max(h, 0f); // océans : surface au niveau de la mer
             int k = j * s + i;
-            dirs[k] = d; wat[k] = w; hgt[k] = h;
+            dirs[k] = d; wat[k] = w; hgt[k] = h; cov[k] = cover;
             pos[k] = d * (Geo.Radius + h);
         }
 
@@ -70,8 +74,8 @@ public static class ChunkBuilder
             var nn = dx.Cross(dy).Normalized();
             if (nn.Dot(dirs[k]) < 0) nn = -nn;
             norms[o] = nn.ToVector3();
-            Geo.ToLatLon(dirs[k], out double lat, out _);
-            cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat);
+            Geo.ToLatLon(dirs[k], out double lat, out double lon);
+            cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing);
         }
 
         // Indices : on choisit l'ordre des sommets pour que la face avant regarde vers l'extérieur
@@ -115,7 +119,9 @@ public static class ChunkBuilder
 
         double sum = 0;
         for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
-        return new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        var data = new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        if (spacing <= Vegetation.MaxSpacing) Vegetation.Scatter(data, face, u0, v0, size, res, spacing, hgt, wat, s, center);
+        return data;
     }
 
     static readonly Color Ocean = new(0.06f, 0.17f, 0.32f);
@@ -127,20 +133,87 @@ public static class ChunkBuilder
     static readonly Color Snow = new(0.92f, 0.94f, 0.97f);
     static readonly Color Sand = new(0.70f, 0.62f, 0.45f);
 
-    /// <summary>Couleur provisoire selon altitude, pente et latitude (sera remplacée par des textures).</summary>
-    static Color TerrainColor(float h, bool water, float flatness, double lat)
+    // Couleurs par classe ESA WorldCover
+    static readonly Color Broadleaf = new(0.16f, 0.27f, 0.10f);
+    static readonly Color Conifer = new(0.10f, 0.19f, 0.10f);
+    static readonly Color Tropical = new(0.11f, 0.26f, 0.08f);
+    static readonly Color Shrub = new(0.36f, 0.37f, 0.21f);
+    static readonly Color Grass = new(0.33f, 0.45f, 0.18f);
+    static readonly Color DryGrass = new(0.55f, 0.52f, 0.30f);
+    static readonly Color Urban = new(0.50f, 0.46f, 0.42f);
+    static readonly Color Desert = new(0.76f, 0.64f, 0.45f);
+    static readonly Color Ice = new(0.86f, 0.91f, 0.97f);
+    static readonly Color Wetland = new(0.26f, 0.34f, 0.22f);
+    static readonly Color Mangrove = new(0.09f, 0.21f, 0.11f);
+    static readonly Color Moss = new(0.45f, 0.44f, 0.33f);
+    // Champs : une couleur par parcelle (blé, colza, labour, prairie temporaire, maïs…)
+    static readonly Color[] Fields =
+    {
+        new(0.62f, 0.56f, 0.30f), new(0.70f, 0.66f, 0.28f), new(0.42f, 0.33f, 0.22f),
+        new(0.36f, 0.48f, 0.19f), new(0.47f, 0.52f, 0.22f), new(0.55f, 0.47f, 0.30f),
+    };
+
+    static uint Hash(int x, int y)
+    {
+        uint h = (uint)x * 374761393u + (uint)y * 668265263u;
+        h = (h ^ (h >> 13)) * 1274126177u;
+        return h ^ (h >> 16);
+    }
+
+    /// <summary>Couleur du sol : classe WorldCover si connue, sinon estimation selon altitude, pente et latitude.</summary>
+    static Color TerrainColor(float h, bool water, float flatness, double lat, double lon, byte cover, double spacing)
     {
         if (water) return h <= 0.5f ? Ocean : Lake;
         double alat = Math.Abs(lat);
         float snowLine = (float)Math.Max(300, 5200 - 55 * Math.Max(0, alat - 15));
         float treeLine = snowLine - 1000;
+        float steep = Math.Clamp((0.88f - flatness) / 0.15f, 0, 1);
         Color c;
+        if (cover != LandCover.Unknown)
+        {
+            // Détail visible seulement quand les sommets sont assez serrés (sinon : moiré)
+            float detail = (float)Math.Clamp((300 - spacing) / 200, 0, 1);
+            switch (cover)
+            {
+                case LandCover.Tree:
+                    c = alat > 50 || h > treeLine * 0.6f ? Conifer : alat < 23 ? Tropical : Broadleaf;
+                    break;
+                case LandCover.Shrub: c = alat < 40 ? Shrub.Lerp(DryGrass, 0.3f) : Shrub; break;
+                case LandCover.Grass:
+                    // alpages et steppes plus jaunes en altitude
+                    c = Grass.Lerp(DryGrass, Math.Clamp((h - treeLine * 0.8f) / 800f, 0, 0.7f) + (alat < 35 ? 0.4f : 0));
+                    break;
+                case LandCover.Crop:
+                {
+                    // parcelles d'environ 150 × 200 m
+                    int fx = (int)Math.Floor(lon * 600 * Math.Cos(lat * Math.PI / 180)), fy = (int)Math.Floor(lat * 800);
+                    var field = Fields[Hash(fx, fy) % (uint)Fields.Length];
+                    c = Fields[0].Lerp(field, detail);
+                    break;
+                }
+                case LandCover.BuiltUp: c = Urban; break;
+                case LandCover.Bare: c = h > treeLine ? Rock : Desert.Lerp(Rock, Math.Clamp(h / 2000f, 0, 0.6f)); break;
+                case LandCover.SnowIce: return Ice.Lerp(Rock, steep * 0.5f); // glaciers, inlandsis
+                case LandCover.Wetland: c = Wetland; break;
+                case LandCover.Mangrove: c = Mangrove; break;
+                case LandCover.Moss: c = Moss; break;
+                default: c = Lowland; break;
+            }
+            // légère variation pour casser l'aplat (forêts, prairies)
+            if (cover is LandCover.Tree or LandCover.Grass or LandCover.Shrub)
+            {
+                float v = ((Hash((int)Math.Floor(lon * 3000), (int)Math.Floor(lat * 3000)) & 255) / 255f - 0.5f) * 0.12f * detail;
+                c = new Color(c.R * (1 + v), c.G * (1 + v), c.B * (1 + v));
+            }
+            // forêts accrochées aux pentes : elles restent vertes ; le reste laisse voir la roche
+            return c.Lerp(Rock, steep * (LandCover.IsForest(cover) ? 0.25f : cover == LandCover.BuiltUp ? 0.3f : 0.8f));
+        }
+
         if (h < 3 && alat < 60) c = Sand;
         else if (h < treeLine * 0.5f) c = Lowland.Lerp(Forest, Math.Clamp(h / (treeLine * 0.5f), 0, 1));
         else if (h < treeLine) c = Forest.Lerp(Alpine, Math.Clamp((h - treeLine * 0.5f) / (treeLine * 0.5f), 0, 1));
         else c = Alpine.Lerp(Rock, Math.Clamp((h - treeLine) / 800f, 0, 1));
         // Pentes raides : roche
-        float steep = Math.Clamp((0.88f - flatness) / 0.15f, 0, 1);
         c = c.Lerp(Rock, steep);
         // Neige au-dessus de la limite, sauf sur les falaises
         float snow = Math.Clamp((h - snowLine) / 300f, 0, 1) * Math.Clamp((flatness - 0.7f) / 0.15f, 0, 1);

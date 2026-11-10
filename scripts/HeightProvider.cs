@@ -10,7 +10,7 @@ namespace SteamEarth;
 
 /// <summary>
 /// Fournit l'altitude (m) en tout point du globe, au niveau de détail demandé.
-/// - Copernicus DEM GLO-30 (30 m, monde entier) et ESA WorldCover (eau, 10 m) téléchargés à la demande
+/// - Copernicus DEM GLO-30 (30 m, monde entier) et ESA WorldCover (eau et couverture des sols, 10 m) téléchargés à la demande
 ///   depuis AWS Open Data, par tuiles internes de COG, mis en cache sur disque (voir StreamedRaster).
 /// - Carte mondiale de base (équirectangulaire 4096×2048, ~10 km, avec bathymétrie).
 /// - Tuiles de détail 1°×1° à 30 m (Copernicus GLO-30) + masque d'eau (ESA WorldCover),
@@ -135,14 +135,29 @@ public static class HeightProvider
     /// (la valeur rendue est alors provisoire).
     /// </summary>
     public static float Sample(double latDeg, double lonDeg, double spacing, out bool water, out bool pending)
+        => Sample(latDeg, lonDeg, spacing, out water, out pending, out _);
+
+    /// <summary>Idem, avec en plus la classe de couverture des sols (<see cref="LandCover"/>, 0 = inconnue).</summary>
+    public static float Sample(double latDeg, double lonDeg, double spacing, out bool water, out bool pending, out byte cover)
     {
         pending = false;
         float hb = SampleBase(latDeg, lonDeg);
-        if (spacing >= BaseOnlySpacing) { water = hb <= 0; return hb; }
+        if (spacing >= BaseOnlySpacing)
+        {
+            water = hb <= 0;
+            cover = LandCover.SampleBase(latDeg, lonDeg);
+            if (cover == LandCover.Water) water = true;
+            return hb;
+        }
 
         // 1. Tuiles locales (incluses dans le jeu) : disponibles hors ligne, sans attente
         float h = Sample(latDeg, lonDeg, true, out water, baseFallback: false, out bool local);
-        if (local) return h;
+        if (local)
+        {
+            cover = LandCover.Sample(latDeg, lonDeg, spacing, true, out bool p);
+            if (p) pending = true;
+            return h;
+        }
 
         // 2. Copernicus 30 m en ligne, à l'aperçu adapté à l'espacement
         int level = spacing < 45 ? 0 : spacing < 90 ? 1 : spacing < 180 ? 2 : 3;
@@ -158,13 +173,15 @@ public static class HeightProvider
         bool ocean = res == StreamedRaster.Result.Absent; // pas de tuile Copernicus = mer
 
         // 3. Eau (lacs, rivières, mer) : WorldCover, aperçu adapté
-        int wl = Math.Clamp((int)Math.Round(Math.Log2(Math.Max(spacing, 10) / 10)), 0, 6);
+        int wl = LandCover.LevelFor(spacing);
         var wres = WorldCover.Sample(latDeg, lonDeg, wl, false, true, out float cls);
-        if (wres == StreamedRaster.Result.Ok) water = cls == 80;
+        if (wres == StreamedRaster.Result.Ok && !float.IsNaN(cls)) { cover = (byte)cls; water = cover == LandCover.Water; }
         else
         {
             if (wres == StreamedRaster.Result.Pending) pending = true;
             water = ocean ? hb <= 0 || h <= 0 : h <= 0 && hb <= 0;
+            // en attendant (ou hors couverture WorldCover) : un aperçu déjà en mémoire, sinon la carte mondiale
+            cover = LandCover.Sample(latDeg, lonDeg, spacing, false, out _);
         }
         if (ocean) water = water || h <= 0;
         return h;
