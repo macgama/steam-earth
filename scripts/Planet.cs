@@ -28,7 +28,58 @@ public partial class Planet : Node3D
     public bool Idle => _inFlight == 0 && _done.IsEmpty && !_wantedMore;
 
     QuadNode[] _roots;
-    StandardMaterial3D _material;
+    ShaderMaterial _material;
+
+    /// <summary>Textures de sol (qualité) : 0 = désactivées, 1 = normales.</summary>
+    public float GroundDetail
+    {
+        get => _groundDetail;
+        set { _groundDetail = value; _material?.SetShaderParameter("detail_strength", value); }
+    }
+    float _groundDetail = 1;
+    /// <summary>Distance (m) jusqu'à laquelle les textures de sol sont visibles.</summary>
+    public float GroundDetailDistance
+    {
+        get => _groundDetailDistance;
+        set { _groundDetailDistance = value; _material?.SetShaderParameter("detail_distance", value); }
+    }
+    float _groundDetailDistance = 1500;
+
+    ImageTexture _snowTex;
+    DateTime _snowUpdated = DateTime.MinValue;
+    DateTime _snowRun;
+
+    /// <summary>Neige réelle (GFS) : met à jour la carte de neige du shader, au plus toutes les 2 minutes.</summary>
+    public void UpdateSnow(Weather weather, DateTime utc)
+    {
+        if (_material == null || weather == null) return;
+        if ((DateTime.UtcNow - _snowUpdated).TotalSeconds < 120 && weather.RunTime == _snowRun) return;
+        _snowUpdated = DateTime.UtcNow;
+        _snowRun = weather.RunTime;
+        var img = weather.SnowMap(utc);
+        _material.SetShaderParameter("snow_enabled", img != null ? 1.0f : 0.0f);
+        if (img == null) return;
+        if (_snowTex == null) { _snowTex = ImageTexture.CreateFromImage(img); _material.SetShaderParameter("snow_map", _snowTex); }
+        else _snowTex.Update(img);
+    }
+
+    static readonly string[] GroundLayers = { "grass", "forest", "field", "urban", "dirt", "rock", "snow" };
+
+    static Texture2DArray LoadGroundLayers()
+    {
+        var images = new Godot.Collections.Array<Image>();
+        foreach (var n in GroundLayers)
+        {
+            var img = GD.Load<Texture2D>($"res://data/textures/{n}.png").GetImage();
+            if (img.IsCompressed()) img.Decompress();
+            img.Convert(Image.Format.Rgb8);
+            img.GenerateMipmaps();
+            images.Add(img);
+        }
+        var arr = new Texture2DArray();
+        arr.CreateFromImages(images);
+        return arr;
+    }
     int _inFlight;
     bool _wantedMore;
     readonly ConcurrentQueue<(QuadNode node, ChunkData data)> _done = new();
@@ -52,12 +103,10 @@ public partial class Planet : Node3D
 
     public override void _Ready()
     {
-        _material = new StandardMaterial3D
-        {
-            VertexColorUseAsAlbedo = true,
-            VertexColorIsSrgb = true,
-            Roughness = 0.95f,
-        };
+        _material = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
+        _material.SetShaderParameter("layers", LoadGroundLayers());
+        _material.SetShaderParameter("detail_strength", _groundDetail);
+        _material.SetShaderParameter("detail_distance", _groundDetailDistance);
         _roots = new QuadNode[6];
         for (int f = 0; f < 6; f++) _roots[f] = MakeNode(f, 0, -1, -1, 2);
     }
@@ -86,9 +135,16 @@ public partial class Planet : Node3D
             arrays[(int)Mesh.ArrayType.Vertex] = item.data.Vertices;
             arrays[(int)Mesh.ArrayType.Normal] = item.data.Normals;
             arrays[(int)Mesh.ArrayType.Color] = item.data.Colors;
+            arrays[(int)Mesh.ArrayType.TexUV] = item.data.RockSnow;
+            arrays[(int)Mesh.ArrayType.Custom0] = item.data.Layers;
+            arrays[(int)Mesh.ArrayType.Custom1] = item.data.TexOffset;
+            arrays[(int)Mesh.ArrayType.Custom2] = item.data.Geo3;
             arrays[(int)Mesh.ArrayType.Index] = item.data.Indices;
             var mesh = new ArrayMesh();
-            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+            var fmt = (Mesh.ArrayFormat)(((long)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift)
+                | ((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift)
+                | ((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift));
+            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, fmt);
             item.node.Requested = false;
             item.node.Incomplete = item.data.Incomplete;
             item.node.BuiltVersion = item.data.DataVersion;

@@ -10,6 +10,12 @@ public sealed class ChunkData
     public Vector3[] Vertices;
     public Vector3[] Normals;
     public Color[] Colors;
+    // Textures de sol (voir terrain.gdshader) : poids herbe, sous-bois, champ, ville (le reste = terre) ;
+    // roche et neige ; décalage du chunk pour des coordonnées de texture continues d'un chunk à l'autre.
+    public float[] Layers;   // 4 par sommet
+    public Vector2[] RockSnow;
+    public float[] TexOffset; // 3 par sommet (constant dans le chunk)
+    public float[] Geo3;      // 3 par sommet : latitude, longitude (degrés), altitude (m) — neige réelle dans le shader
     public int[] Indices;
     public Vec3d Center; // centre du chunk dans le repère planète (double), au niveau de la mer
     public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
@@ -63,6 +69,9 @@ public static class ChunkBuilder
         var verts = new Vector3[n * n + border];
         var norms = new Vector3[n * n + border];
         var cols = new Color[n * n + border];
+        var layers = new float[(n * n + border) * 4];
+        var rockSnow = new Vector2[n * n + border];
+        var geo3 = new float[(n * n + border) * 3];
 
         for (int j = 0; j < n; j++)
         for (int i = 0; i < n; i++)
@@ -76,7 +85,9 @@ public static class ChunkBuilder
             if (nn.Dot(dirs[k]) < 0) nn = -nn;
             norms[o] = nn.ToVector3();
             Geo.ToLatLon(dirs[k], out double lat, out double lon);
-            cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing);
+            cols[o] = TerrainColor(hgt[k], wat[k], (float)nn.Dot(dirs[k]), lat, lon, cov[k], spacing, out var lw, out rockSnow[o]);
+            geo3[3 * o] = (float)lat; geo3[3 * o + 1] = (float)lon; geo3[3 * o + 2] = hgt[k];
+            layers[4 * o] = lw.R; layers[4 * o + 1] = lw.G; layers[4 * o + 2] = lw.B; layers[4 * o + 3] = lw.A;
         }
 
         // Indices : on choisit l'ordre des sommets pour que la face avant regarde vers l'extérieur
@@ -113,6 +124,9 @@ public static class ChunkBuilder
             verts[sb + q] = verts[ring[q]] + down;
             norms[sb + q] = norms[ring[q]];
             cols[sb + q] = cols[ring[q]];
+            rockSnow[sb + q] = rockSnow[ring[q]];
+            for (int c = 0; c < 3; c++) geo3[3 * (sb + q) + c] = geo3[3 * ring[q] + c];
+            for (int c = 0; c < 4; c++) layers[4 * (sb + q) + c] = layers[4 * ring[q] + c];
         }
         for (int q = 0; q < border; q++)
         {
@@ -124,7 +138,14 @@ public static class ChunkBuilder
 
         double sum = 0;
         for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
-        var data = new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        // Décalage de texture : centre du chunk modulo la période des textures (calculé en double)
+        const double period = 1024;
+        float ox = (float)(center.X - Math.Floor(center.X / period) * period);
+        float oy = (float)(center.Y - Math.Floor(center.Y / period) * period);
+        float oz = (float)(center.Z - Math.Floor(center.Z / period) * period);
+        var texOff = new float[verts.Length * 3];
+        for (int q = 0; q < verts.Length; q++) { texOff[3 * q] = ox; texOff[3 * q + 1] = oy; texOff[3 * q + 2] = oz; }
+        var data = new ChunkData { Geo3 = geo3, Layers = layers, RockSnow = rockSnow, TexOffset = texOff, Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
         if (spacing <= Vegetation.MaxSpacing) Vegetation.Scatter(data, face, u0, v0, size, res, spacing, hgt, wat, s, center);
         return data;
     }
@@ -166,9 +187,12 @@ public static class ChunkBuilder
     }
 
     /// <summary>Couleur du sol : classe WorldCover si connue, sinon estimation selon altitude, pente et latitude.</summary>
-    static Color TerrainColor(float h, bool water, float flatness, double lat, double lon, byte cover, double spacing)
+    static Color TerrainColor(float h, bool water, float flatness, double lat, double lon, byte cover, double spacing,
+        out Color layers, out Vector2 rockSnow)
     {
-        if (water) return h <= 0.5f ? Ocean : Lake;
+        layers = new Color(0, 0, 0, 0);
+        rockSnow = Vector2.Zero;
+        if (water) { rockSnow = new Vector2(-1, 0); return h <= 0.5f ? Ocean : Lake; } // eau : pas de texture de sol
         double alat = Math.Abs(lat);
         float snowLine = (float)Math.Max(300, 5200 - 55 * Math.Max(0, alat - 15));
         float treeLine = snowLine - 1000;
@@ -198,7 +222,7 @@ public static class ChunkBuilder
                 }
                 case LandCover.BuiltUp: c = Urban; break;
                 case LandCover.Bare: c = h > treeLine ? Rock : Desert.Lerp(Rock, Math.Clamp(h / 2000f, 0, 0.6f)); break;
-                case LandCover.SnowIce: return Ice.Lerp(Rock, steep * 0.5f); // glaciers, inlandsis
+                case LandCover.SnowIce: rockSnow = new Vector2(steep * 0.5f, 1 - steep * 0.5f); return Ice.Lerp(Rock, steep * 0.5f); // glaciers, inlandsis
                 case LandCover.Wetland: c = Wetland; break;
                 case LandCover.Mangrove: c = Mangrove; break;
                 case LandCover.Moss: c = Moss; break;
@@ -211,7 +235,19 @@ public static class ChunkBuilder
                 c = new Color(c.R * (1 + v), c.G * (1 + v), c.B * (1 + v));
             }
             // forêts accrochées aux pentes : elles restent vertes ; le reste laisse voir la roche
-            return c.Lerp(Rock, steep * (LandCover.IsForest(cover) ? 0.25f : cover == LandCover.BuiltUp ? 0.3f : 0.8f));
+            float rock = steep * (LandCover.IsForest(cover) ? 0.25f : cover == LandCover.BuiltUp ? 0.3f : 0.8f);
+            layers = cover switch
+            {
+                LandCover.Tree or LandCover.Mangrove => new Color(0, 1, 0, 0),
+                LandCover.Grass or LandCover.Wetland => new Color(1, 0, 0, 0),
+                LandCover.Shrub or LandCover.Moss => new Color(0.5f, 0, 0, 0),
+                LandCover.Crop => new Color(0, 0, 1, 0),
+                LandCover.BuiltUp => new Color(0, 0, 0, 1),
+                _ => new Color(0, 0, 0, 0), // terre, sable, désert
+            };
+            if (cover == LandCover.Bare && h > treeLine) rock = 1;
+            rockSnow = new Vector2(rock, 0);
+            return c.Lerp(Rock, rock);
         }
 
         if (h < 3 && alat < 60) c = Sand;
@@ -222,6 +258,9 @@ public static class ChunkBuilder
         c = c.Lerp(Rock, steep);
         // Neige au-dessus de la limite, sauf sur les falaises
         float snow = Math.Clamp((h - snowLine) / 300f, 0, 1) * Math.Clamp((flatness - 0.7f) / 0.15f, 0, 1);
+        float alpineRock = h >= treeLine ? Math.Clamp((h - treeLine) / 800f, 0, 1) : 0;
+        layers = h < 3 && alat < 60 ? new Color(0, 0, 0, 0) : new Color(1, 0, 0, 0);
+        rockSnow = new Vector2(Math.Max(steep, alpineRock), snow);
         return c.Lerp(Snow, snow);
     }
 }

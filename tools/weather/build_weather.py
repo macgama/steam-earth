@@ -34,6 +34,10 @@ CHANNELS = [
     ("precip", ("PRATE", "surface"), "sqrt", 0, 50, "mm/h"),
     ("frozen", ("CPOFP", "surface"), "linear", 0, 100, "% de précipitations gelées"),
     ("visibility", ("VIS", "surface"), "sqrt", 0, 30000, "m"),
+    # Neige au sol (modèle de surface de GFS : elle tombe, s'accumule et fond avec la météo réelle)
+    ("snow_depth", ("SNOD", "surface"), "sqrt", 0, 4, "m"),
+    # Altitude du relief du modèle (pour recaler neige et température sur le vrai relief)
+    ("orography", ("HGT", "surface"), "linear", -500, 6500, "m"),
 ]
 
 def get(url, rng=None):

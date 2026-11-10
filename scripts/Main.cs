@@ -166,6 +166,7 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         _frames++;
+        _planet.UpdateSnow(_weather, _atmosphere.GameUtc); // neige au sol selon la météo réelle
         _hud.Visible = !_start.IsOpen;
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
