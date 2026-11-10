@@ -10,7 +10,7 @@ namespace SteamEarth;
 ///
 /// Commandes : clic gauche = capturer la souris, Échap = libérer,
 /// ZQSD / WASD = avancer, Espace / E = monter, C / A = descendre,
-/// Maj = ×8, molette = multiplicateur de vitesse, 1–5 = lieux prédéfinis, F = marcher (collé au sol).
+/// Maj = ×8, molette = multiplicateur de vitesse, 1–9 = lieux prédéfinis, F = marcher (collé au sol).
 /// </summary>
 public partial class FlyCamera : Camera3D
 {
@@ -64,6 +64,11 @@ public partial class FlyCamera : Camera3D
                 case Key.Key3: Teleport(46.45, 6.55, 3000, 90, -10); break;    // Lac Léman
                 case Key.Key4: Teleport(46.8, 8.2, 3_000_000, 0, -89); break;  // Europe depuis l'espace
                 case Key.Key5: Teleport(27.9, 86.6, 2000, 90, 0); break;       // Himalaya (données basse résolution)
+                // Grandes villes, pour comparer jour/nuit et fuseaux (relief basse résolution)
+                case Key.Key6: Teleport(40.70, -74.02, 800, 30, -10); break;   // New York
+                case Key.Key7: Teleport(35.68, 139.70, 800, 270, -5); break;   // Tokyo, vers le mont Fuji
+                case Key.Key8: Teleport(-33.86, 151.21, 800, 0, -10); break;   // Sydney
+                case Key.Key9: Teleport(-22.95, -43.21, 800, 180, -10); break; // Rio de Janeiro
             }
         }
     }
