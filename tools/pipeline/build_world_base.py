@@ -1,7 +1,7 @@
 """Carte d'altitude mondiale de base (basse résolution, avec bathymétrie).
 
 Source : tuiles « Terrarium » (AWS Open Data, elevation-tiles-prod), qui agrègent
-SRTM, GMTED, ETOPO1, etc. Reprojetée en équirectangulaire (lat/lon) 4096x2048 (~10 km/px).
+SRTM, GMTED, ETOPO1, etc. Reprojetée en équirectangulaire (lat/lon), 2^zoom × 256 pixels de large (zoom 5 : 8192×4096, ~5 km).
 Usage : python build_world_base.py ../../data/world_base.hgt.gz [zoom]
 """
 import io, sys, math, urllib.request
@@ -26,7 +26,7 @@ with ThreadPoolExecutor(16) as ex:
     for (x, y), t in ex.map(fetch, [(x, y) for x in range(n) for y in range(n)]):
         merc[y * 256:(y + 1) * 256, x * 256:(x + 1) * 256] = t
 
-W, H = 4096, 2048
+W = merc.shape[1]; H = W // 2  # z4 : 4096x2048 (~10 km), z5 : 8192x4096 (~5 km)
 lat = 90 - (np.arange(H) + 0.5) * 180 / H
 lon = -180 + (np.arange(W) + 0.5) * 360 / W
 latc = np.clip(lat, -85.05, 85.05)

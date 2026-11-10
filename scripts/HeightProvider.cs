@@ -4,11 +4,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using Godot;
+using SteamEarth.Data;
 
 namespace SteamEarth;
 
 /// <summary>
-/// Fournit l'altitude (m) en tout point du globe.
+/// Fournit l'altitude (m) en tout point du globe, au niveau de détail demandé.
+/// - Copernicus DEM GLO-30 (30 m, monde entier) et ESA WorldCover (eau, 10 m) téléchargés à la demande
+///   depuis AWS Open Data, par tuiles internes de COG, mis en cache sur disque (voir StreamedRaster).
 /// - Carte mondiale de base (équirectangulaire 4096×2048, ~10 km, avec bathymétrie).
 /// - Tuiles de détail 1°×1° à 30 m (Copernicus GLO-30) + masque d'eau (ESA WorldCover),
 ///   chargées à la demande depuis res://data/detail/ et gardées en cache.
@@ -23,6 +26,22 @@ public static class HeightProvider
     static int _bw, _bh;
     static readonly HashSet<int> Available = new();
     static readonly ConcurrentDictionary<int, Lazy<DetailTile>> Tiles = new();
+
+    static string Hemi(int v, char pos, char neg, string fmt) => (v >= 0 ? pos : neg) + Math.Abs(v).ToString(fmt);
+
+    /// <summary>Copernicus DEM GLO-30 : un COG par case de 1°, aperçus ×2, ×4, ×8.</summary>
+    public static readonly StreamedRaster Copernicus = new("copernicus30", 1, (lat, lon) =>
+    {
+        string n = $"Copernicus_DSM_COG_10_{Hemi(lat, 'N', 'S', "00")}_00_{Hemi(lon, 'E', 'W', "000")}_00_DEM";
+        return $"https://copernicus-dem-30m.s3.amazonaws.com/{n}/{n}.tif";
+    }, 96);
+
+    /// <summary>ESA WorldCover 2021 (10 m) : un COG par case de 3°, classe 80 = eau permanente.</summary>
+    public static readonly StreamedRaster WorldCover = new("worldcover", 3, (lat, lon) =>
+        $"https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{Hemi(lat, 'N', 'S', "00")}{Hemi(lon, 'E', 'W', "000")}_Map.tif", 64);
+
+    /// <summary>Au-delà de cet écart entre sommets, la carte mondiale de base suffit.</summary>
+    public const double BaseOnlySpacing = 2000;
 
     sealed class DetailTile
     {
@@ -110,9 +129,54 @@ public static class HeightProvider
         return t;
     }
 
-    /// <summary>Altitude en mètres. <paramref name="useDetail"/> : utiliser les tuiles 30 m si présentes.</summary>
-    public static float Sample(double latDeg, double lonDeg, bool useDetail, out bool water)
+    /// <summary>
+    /// Altitude (m) pour un maillage dont les sommets sont espacés de <paramref name="spacing"/> mètres.
+    /// <paramref name="pending"/> = true si une donnée plus fine est en cours de téléchargement
+    /// (la valeur rendue est alors provisoire).
+    /// </summary>
+    public static float Sample(double latDeg, double lonDeg, double spacing, out bool water, out bool pending)
     {
+        pending = false;
+        float hb = SampleBase(latDeg, lonDeg);
+        if (spacing >= BaseOnlySpacing) { water = hb <= 0; return hb; }
+
+        // 1. Tuiles locales (incluses dans le jeu) : disponibles hors ligne, sans attente
+        float h = Sample(latDeg, lonDeg, true, out water, baseFallback: false, out bool local);
+        if (local) return h;
+
+        // 2. Copernicus 30 m en ligne, à l'aperçu adapté à l'espacement
+        int level = spacing < 45 ? 0 : spacing < 90 ? 1 : spacing < 180 ? 2 : 3;
+        var res = Copernicus.Sample(latDeg, lonDeg, level, true, true, out float v);
+        if (res == StreamedRaster.Result.Pending)
+        {
+            pending = true;
+            // en attendant : un aperçu plus grossier déjà en mémoire, sinon la carte de base
+            for (int l = level + 1; l <= 3 && res != StreamedRaster.Result.Ok; l++)
+                res = Copernicus.Sample(latDeg, lonDeg, l, true, false, out v);
+        }
+        h = res == StreamedRaster.Result.Ok ? v : hb;
+        bool ocean = res == StreamedRaster.Result.Absent; // pas de tuile Copernicus = mer
+
+        // 3. Eau (lacs, rivières, mer) : WorldCover, aperçu adapté
+        int wl = Math.Clamp((int)Math.Round(Math.Log2(Math.Max(spacing, 10) / 10)), 0, 6);
+        var wres = WorldCover.Sample(latDeg, lonDeg, wl, false, true, out float cls);
+        if (wres == StreamedRaster.Result.Ok) water = cls == 80;
+        else
+        {
+            if (wres == StreamedRaster.Result.Pending) pending = true;
+            water = ocean ? hb <= 0 || h <= 0 : h <= 0 && hb <= 0;
+        }
+        if (ocean) water = water || h <= 0;
+        return h;
+    }
+
+    /// <summary>Altitude en mètres. <paramref name="useDetail"/> : utiliser les tuiles 30 m locales si présentes.</summary>
+    public static float Sample(double latDeg, double lonDeg, bool useDetail, out bool water)
+        => Sample(latDeg, lonDeg, useDetail, out water, baseFallback: true, out _);
+
+    static float Sample(double latDeg, double lonDeg, bool useDetail, out bool water, bool baseFallback, out bool fromLocal)
+    {
+        fromLocal = false;
         if (useDetail)
         {
             int la = (int)Math.Floor(latDeg), lo = (int)Math.Floor(lonDeg);
@@ -120,9 +184,11 @@ public static class HeightProvider
             if (Available.Contains(key))
             {
                 var tile = Tiles.GetOrAdd(key, _ => new Lazy<DetailTile>(() => LoadTile(la, lo))).Value;
+                fromLocal = true;
                 return SampleTile(tile, latDeg - la, lonDeg - lo, out water);
             }
         }
+        if (!baseFallback) { water = false; return 0; }
         float hb = SampleBase(latDeg, lonDeg);
         water = hb <= 0;
         return hb;
@@ -153,9 +219,11 @@ public static class HeightProvider
     }
 
     /// <summary>Altitude de la surface praticable (l'eau compte comme surface).</summary>
-    public static float SurfaceHeight(double latDeg, double lonDeg)
+    /// <param name="spacing">précision voulue (m) : 10 sous les pieds du joueur ; plus grossier pour les objets
+    /// lointains (frontières…), afin de ne pas télécharger le 30 m de toute la planète.</param>
+    public static float SurfaceHeight(double latDeg, double lonDeg, double spacing = 10.0)
     {
-        float h = Sample(latDeg, lonDeg, true, out bool water);
+        float h = Sample(latDeg, lonDeg, spacing, out bool water, out _);
         return water ? Math.Max(h, 0) : h;
     }
 }

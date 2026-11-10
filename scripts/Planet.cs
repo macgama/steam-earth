@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Godot;
+using SteamEarth.Data;
 
 namespace SteamEarth;
 
@@ -43,6 +44,8 @@ public partial class Planet : Node3D
         public Vec3d LodCenter => CenterDir * (Geo.Radius + MeanHeight);
         public double Edge; // longueur approximative d'un côté (m)
         public bool Requested, Ready, Dead;
+        public bool Incomplete; // construit avec des données provisoires (téléchargement en cours)
+        public int BuiltVersion;
     }
 
     public override void _Ready()
@@ -84,6 +87,15 @@ public partial class Planet : Node3D
             arrays[(int)Mesh.ArrayType.Index] = item.data.Indices;
             var mesh = new ArrayMesh();
             mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+            item.node.Requested = false;
+            item.node.Incomplete = item.data.Incomplete;
+            item.node.BuiltVersion = item.data.DataVersion;
+            if (item.node.Mesh != null)
+            {
+                // Reconstruction (données fines arrivées) : on remplace le maillage sur place.
+                item.node.Mesh.Mesh = mesh;
+                continue;
+            }
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _material, Visible = false };
             mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             AddChild(mi);
@@ -112,14 +124,11 @@ public partial class Planet : Node3D
         n.Requested = true;
         _inFlight++;
         int face = n.Face; double u0 = n.U0, v0 = n.V0, size = n.Size;
-        // Toujours utiliser les tuiles 30 m quand elles existent : mélanger 30 m et 10 km
-        // entre deux niveaux voisins crée des marches visibles.
-        bool detail = true;
         int res = Resolution;
         Task.Run(() =>
         {
             ChunkData data;
-            try { data = ChunkBuilder.Build(face, u0, v0, size, res, detail); }
+            try { data = ChunkBuilder.Build(face, u0, v0, size, res); }
             catch (Exception e) { GD.PrintErr(e.ToString()); data = null; }
             if (data != null) _done.Enqueue((n, data));
             else _done.Enqueue((new QuadNode { Dead = true }, null));
@@ -146,6 +155,8 @@ public partial class Planet : Node3D
         {
             n.Mesh.Position = (n.Center - cam).ToVector3();
             VisibleChunks++;
+            // Des données plus fines sont arrivées depuis la construction : on reconstruit.
+            if (n.Incomplete && n.BuiltVersion != StreamedRaster.DataVersion) Request(n);
             if (n.Level > DeepestLevel) DeepestLevel = n.Level;
         }
     }
