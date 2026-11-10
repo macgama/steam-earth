@@ -147,7 +147,10 @@ dans `user://cache/overture/`.
   du serveur) et garde la liste en cache pour jouer hors ligne.
 - `RoadLayer.cs` + `RoadBuilder.cs` : jusqu'à ~3 km (5 km en altitude), tuiles de zoom 14 avec **tous les tronçons** en
   rubans de leur vraie largeur (largeur OSM si connue), posés sur le relief 30 m : autoroutes, routes, rues, chemins
-  agricoles, sentiers, escaliers, voies ferrées (ballast + deux rails), trams, funiculaires. Les **ponts** sont tendus
+  agricoles, sentiers, escaliers, voies ferrées (ballast + deux rails), trams, funiculaires. Revêtements dessinés par un shader, sans texture à charger : asphalte avec lignes blanches (bords et ligne médiane
+  en tirets) sur les grandes routes, pavés, chemins de gravier avec bande d'herbe, sentiers en terre ; voies ferrées
+  en ballast clair avec traverses tous les 0,6 m et rails en acier brillant, trams noyés dans la chaussée.
+  Les **ponts** sont tendus
   entre leurs culées, les **tunnels** et voies souterraines ne sont pas dessinés. Au-delà, jusqu'à ~20–60 km : tuiles
   de zoom 12 en lignes fines, masquées là où le détail est chargé.
 - `PlacesLayer.cs` : noms des localités (villes, villes moyennes, villages, hameaux), en français quand OSM le connaît
