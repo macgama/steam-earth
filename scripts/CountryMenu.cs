@@ -18,6 +18,8 @@ public partial class CountryMenu : CanvasLayer
     Button _toggle;
 
     public bool IsOpen => _panel.Visible;
+    /// <summary>Bouton « Pays (Tab) » en haut à droite (masqué : l'interface passe par Tab et le menu pause).</summary>
+    public bool ShowButton { get => _toggle.Visible; set => _toggle.Visible = value; }
 
     public override void _Ready()
     {

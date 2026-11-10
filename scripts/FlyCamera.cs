@@ -96,11 +96,11 @@ public partial class FlyCamera : Camera3D
         }
         else if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
         {
-            Yaw += mm.Relative.X * 0.0025;
+            Yaw += mm.Relative.X * 0.0025 * MouseSensitivity;
             _sinceMouse = 0;
             // En vue arrière, on limite pour ne pas passer sous le personnage ni à la verticale
             bool tp = (Walk && Body != null || Ride != null) && ThirdPerson || Vehicle != null;
-            Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025, tp ? -1.35 : -1.55, tp ? 0.7 : 1.55);
+            Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025 * MouseSensitivity * (InvertY ? -1 : 1), tp ? -1.35 : -1.55, tp ? 0.7 : 1.55);
         }
         else if (e is InputEventKey k && k.Pressed && !k.Echo)
         {
@@ -133,6 +133,8 @@ public partial class FlyCamera : Camera3D
     public bool AutoForward;  // test automatique : avance seul (argument --autowalk)
     public bool AutoJump;     // test automatique : tient Espace (argument --climb)
     public bool InputBlocked; // menu ouvert : les touches servent à l'interface
+    public static double MouseSensitivity = 1; // menu Options (UiSettings)
+    public static bool InvertY;
 
     public override void _Process(double delta)
     {
