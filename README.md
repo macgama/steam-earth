@@ -254,8 +254,10 @@ sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
   Toits : à deux pans, à quatre pans, en pavillon ou en appentis quand OSM le dit (ou par défaut pour les petites
   maisons à peu près rectangulaires), sinon plats. Les « building parts » d'OSM (églises, tours…) remplacent le contour.
   Couleurs de façade et de toit d'OSM quand elles existent, sinon selon le matériau ou le type.
-- `BuildingsLayer.cs` : invite, liste des villes, tuiles, et un shader qui dessine les fenêtres (étages de 3 m) et les
-  allume au hasard à la tombée de la nuit.
+- `BuildingsLayer.cs` : invite (seulement à plus de 500 m au-dessus du sol, pour ne pas encombrer la vue en ville),
+  liste des villes, tuiles, et un shader qui dessine les fenêtres (étages de 3 m) et les allume la nuit selon l'heure
+  locale : ~50 % en soirée, ~6 % entre 1 h et 5 h, un regain vers 6–7 h ; ce sont toujours les mêmes fenêtres qui
+  s'éteignent.
 
 Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 
