@@ -41,7 +41,12 @@ La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très r
   avec des « jupes » pour masquer les fissures entre niveaux.
 - **Précision** : positions en `double` (`Vec3d`). La caméra reste à l'origine de Godot et le monde est placé autour d'elle,
   tourné pour que la verticale locale soit l'axe Y (le ciel, le brouillard et la physique Godot restent corrects partout).
-- **Altitudes** (`HeightProvider.cs`) : carte mondiale ~10 km + tuiles 1°×1° à 30 m chargées à la demande.
+- **Altitudes** (`HeightProvider.cs`) : carte mondiale ~5 km incluse dans le jeu, puis **relief 30 m sur toute la Terre
+  téléchargé à la demande** : `Data/CogReader.cs` lit directement les fichiers Copernicus et WorldCover hébergés sur
+  AWS Open Data (requêtes HTTP partielles, seules les tuiles 1024×1024 utiles sont téléchargées) et les garde en cache
+  dans `user://cache/`. Plus on est loin, plus on lit un aperçu grossier (60, 120, 240 m). Tant qu'une tuile n'est pas
+  arrivée, le chunk utilise une donnée plus grossière puis se reconstruit tout seul.
+  Les tuiles de `data/detail/` (Suisse) restent utilisées en priorité, sans réseau.
 
 ## Météo et heure réelles
 
@@ -99,14 +104,17 @@ Après la fusion dans `main`, lancer une première fois le workflow à la main :
 
 | Fichier | Source | Résolution |
 |---|---|---|
-| `data/world_base.hgt.gz` | Tuiles Terrarium (AWS Open Data : SRTM, GMTED, ETOPO1…), avec bathymétrie | ~10 km |
+| `data/world_base.hgt.gz` | Tuiles Terrarium (AWS Open Data : SRTM, GMTED, ETOPO1…), avec bathymétrie | ~5 km |
+| Relief mondial (streaming) | Copernicus DEM GLO-30, bucket AWS `copernicus-dem-30m` | 30 m |
+| Eau mondiale (streaming) | ESA WorldCover 2021, bucket AWS `esa-worldcover` | 10 m |
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 
-Couverture actuelle en 30 m : 45–48°N, 5–11°E (Suisse et alentours).
+Le relief 30 m couvre toute la Terre en streaming (connexion Internet nécessaire la première fois ; ensuite le cache suffit).
+Les tuiles locales `data/detail/` (45–48°N, 5–11°E) servent de version hors ligne pour la Suisse.
 
 ### Ajouter une région
 
@@ -117,8 +125,8 @@ python build_detail_tiles.py ../../data/detail LAT_MIN LAT_MAX LON_MIN LON_MAX
 # ex. la Corse : python build_detail_tiles.py ../../data/detail 41 43 8 10
 ```
 
-Chaque tuile 30 m pèse ~8 Mo. Pour la Terre entière (~26 000 tuiles, ~200 Go), il faudra les servir
-depuis un stockage en ligne et les télécharger en streaming plutôt que de les mettre dans Git.
+Ce n'est plus nécessaire pour avoir du 30 m (le streaming couvre la Terre), seulement pour jouer hors ligne
+sur une région. Chaque tuile pèse ~8 Mo.
 
 Format des fichiers : en-tête 16 octets (`SEH1`, largeur, hauteur, 0) puis int16 codés en delta par ligne, le tout en gzip.
 
@@ -130,8 +138,8 @@ Les fichiers `.gz` ne sont pas des ressources Godot : dans *Projet → Exporter 
 ## Limites connues / prochaines étapes
 
 - Couleurs par sommet provisoires → textures + shader (herbe, roche, neige selon pente et altitude).
-- Hors des tuiles 30 m, le relief est très lisse (10 km) → générer la base mondiale en GLO-90 et ajouter du détail procédural.
-- Raccord visible entre zones 30 m et zones 10 km.
+- Relief plus fin que 30 m : pays par pays (Suisse 0,5 m avec swissALTI3D, France 1 m avec le RGE ALTI…).
+- Copernicus n'a pas de fichier pour l'Arménie et l'Azerbaïdjan (relief à ~5 km là-bas pour l'instant).
 - Océan = surface plate colorée → shader d'eau, vagues, physique de flottaison.
 - Atmosphère : ciel procédural Godot → diffusion atmosphérique vue de l'espace.
 - Collisions physiques pour les véhicules (colliders générés pour les chunks proches).

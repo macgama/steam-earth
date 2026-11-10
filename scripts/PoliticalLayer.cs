@@ -30,7 +30,7 @@ public partial class PoliticalLayer : Node3D
         // Capitales
         foreach (var c in Geography.Countries)
         {
-            double ground = HeightProvider.SurfaceHeight(c.Lat, c.Lon);
+            double ground = HeightProvider.SurfaceHeight(c.Lat, c.Lon, 500);
             var pos = Geo.FromLatLon(c.Lat, c.Lon) * (Geo.Radius + ground + 60);
             var label = new Label3D
             {
@@ -101,7 +101,7 @@ public partial class PoliticalLayer : Node3D
     static Vec3d Draped(Vec3d dir)
     {
         Geo.ToLatLon(dir, out double lat, out double lon);
-        return dir * (Geo.Radius + HeightProvider.SurfaceHeight(lat, lon) + 4);
+        return dir * (Geo.Radius + HeightProvider.SurfaceHeight(lat, lon, 500) + 4);
     }
 
     void AddBorderMeshes(Godot.Collections.Array built)

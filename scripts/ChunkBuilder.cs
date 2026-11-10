@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using SteamEarth.Data;
 
 namespace SteamEarth;
 
@@ -12,6 +13,8 @@ public sealed class ChunkData
     public int[] Indices;
     public Vec3d Center; // centre du chunk dans le repère planète (double), au niveau de la mer
     public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
+    public bool Incomplete;   // des données fines étaient encore en téléchargement : à reconstruire
+    public int DataVersion;   // version des données au moment de la construction
 }
 
 /// <summary>
@@ -21,8 +24,12 @@ public sealed class ChunkData
 /// </summary>
 public static class ChunkBuilder
 {
-    public static ChunkData Build(int face, double u0, double v0, double size, int res, bool useDetail)
+    public static ChunkData Build(int face, double u0, double v0, double size, int res)
     {
+        int version = StreamedRaster.DataVersion;
+        bool incomplete = false;
+        // Espacement au sol entre deux sommets (m) : choisit la résolution des données à lire.
+        double spacing = size / res * Math.PI / 4 * Geo.Radius;
         int s = res + 3; // grille avec une bordure d'un échantillon (pour les normales)
         var pos = new Vec3d[s * s];
         var dirs = new Vec3d[s * s];
@@ -36,7 +43,8 @@ public static class ChunkBuilder
             double u = u0 + (i - 1) * step, v = v0 + (j - 1) * step;
             var d = Geo.CubeToSphere(face, u, v);
             Geo.ToLatLon(d, out double lat, out double lon);
-            float h = HeightProvider.Sample(lat, lon, useDetail, out bool w);
+            float h = HeightProvider.Sample(lat, lon, spacing, out bool w, out bool pending);
+            if (pending) incomplete = true;
             if (w) h = Math.Max(h, 0f); // océans : surface au niveau de la mer
             int k = j * s + i;
             dirs[k] = d; wat[k] = w; hgt[k] = h;
@@ -107,7 +115,7 @@ public static class ChunkBuilder
 
         double sum = 0;
         for (int j = 1; j <= n; j++) for (int i = 1; i <= n; i++) sum += hgt[j * s + i];
-        return new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n) };
+        return new ChunkData { Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
     }
 
     static readonly Color Ocean = new(0.06f, 0.17f, 0.32f);
