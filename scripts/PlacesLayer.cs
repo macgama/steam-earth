@@ -103,7 +103,7 @@ public partial class PlacesLayer : Node3D
     {
         foreach (var p in _places.Values)
             if (p.Label.Visible)
-                list.Add(new BuildingsLayer.Target(p.Name, p.Lat, p.Lon, BuildingsLayer.RadiusFor(p.Class, p.Population), p.Label));
+                list.Add(new BuildingsLayer.Target(p.Name, p.Lat, p.Lon, BuildingsLayer.RadiusFor(p.Class, p.Population), BuildingsLayer.MaxRadiusFor(p.Class, p.Population), p.Label));
     }
 
     void Scan(Vec3d dir)

@@ -33,6 +33,7 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | T | afficher / masquer routes, chemins et voies ferrées |
 | N | afficher / masquer les noms des villes, villages et rues |
 | P | afficher / masquer les transports : gares, arrêts, débarcadères, aéroports |
+| M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
@@ -190,6 +191,18 @@ de dépendre du bucket d'Overture : il suffit de changer `Overture.Bucket`.
 | ![](docs/transports-berne.jpg) | ![](docs/transports-geneve.jpg) | ![](docs/aeroport-zurich.jpg) |
 
 Les lignes et horaires (trains, bus, avions qui circulent) ne sont pas encore là : voir « Limites connues ».
+## Menu de départ : commencer n'importe où
+
+Au lancement (et ensuite avec **M**), le joueur choisit où commencer :
+
+- **Reprendre** là où il était (position gardée toutes les 5 s dans `user://last_position.json`) ;
+- **chercher une ville** parmi les 7 342 villes de Natural Earth (noms en français, `data/geo/cities.tsv.gz`, généré par
+  `tools/geo/build_cities.py`) ou un pays : on arrive 500 m au-dessus et la ville est construite ;
+- **cliquer sur la Terre** : chaque clic rapproche (de l'orbite jusqu'à ~25 km), le dernier clic atterrit à cet endroit
+  exact, n'importe où sur la planète. Clic droit ou « Reculer » : vue plus large.
+
+Les tests automatiques (`--at`, `--view`, `--country`, `--build`…) sautent ce menu ; `--start` le force.
+
 ## Bâtiments des villes et villages, à la demande
 
 Les bâtiments réels ne sont construits que là où le joueur le demande :
@@ -201,6 +214,9 @@ Les bâtiments réels ne sont construits que là où le joueur le demande :
 
 La zone construite est un disque autour du centre : ~350 m pour un hameau, 700 m pour un village, 1,5 km pour une
 petite ville, 4 km pour une capitale, 2 à 7 km pour une ville selon sa population, 8 km pour une mégapole.
+Les **grandes villes s'agrandissent au fur et à mesure** : quand le joueur arrive à moins de 1,5 km du bord de la zone
+déjà construite, elle grandit (jusqu'à 15 km pour une capitale, 6 à 20 km pour une ville, 30 km pour une mégapole) ;
+seules les tuiles du nouvel anneau sont reconstruites.
 Les villes construites sont gardées dans `user://cities.json` et réapparaissent au lancement suivant (leurs tuiles ne
 sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
 
@@ -218,9 +234,9 @@ sont chargées que lorsqu'on est à moins de ~60 km ; visibles jusqu'à ~40 km).
 
 Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 
-| Berne, la vieille ville et la cathédrale | Lauterbrunnen |
-|---|---|
-| ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) |
+| Berne, la vieille ville et la cathédrale | Lauterbrunnen | Berne agrandie, à la tombée de la nuit | Menu de départ |
+|---|---|---|---|
+| ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) | ![](docs/batiments-berne-nuit.jpg) | ![](docs/menu-depart.jpg) |
 
 Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
 convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
@@ -243,6 +259,7 @@ textures de façades.
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 | Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
+| `data/geo/cities.tsv.gz` | Natural Earth 1:10m populated places (domaine public) | 7 342 villes |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 
