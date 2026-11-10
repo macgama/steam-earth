@@ -55,7 +55,9 @@ public partial class BuildingsLayer : Node3D
 
     public const string Attribution = "bâtiments : OSM, Microsoft, Google Open Buildings (CC BY 4.0), USGS";
     const int Zoom = 14, MaxBuilds = 3;
-    const double ShowDistance = 40_000, LoadDistance = 60_000;
+    // Distances selon le niveau de qualité graphique (Élevé : 40 km / 60 km)
+    static double ShowDistance => GraphicsQuality.Current.BuildingsShowDistance;
+    static double LoadDistance => GraphicsQuality.Current.BuildingsShowDistance * 1.5;
 
     /// <summary>Localité qu'on peut construire (étiquette affichée par une autre couche).</summary>
     public readonly record struct Target(string Name, double Lat, double Lon, double Radius, double MaxRadius, Label3D Label);
@@ -114,8 +116,18 @@ public partial class BuildingsLayer : Node3D
 
     static string SavePath => Path.Combine(OS.GetUserDataDir(), "cities.json");
 
+    public override void _ExitTree() => GraphicsQuality.Changed -= OnQualityChanged;
+
+    /// <summary>Ombres des bâtiments déjà construits selon le nouveau niveau (les distances sont relues à chaque image).</summary>
+    void OnQualityChanged(QualityProfile q, QualityProfile old)
+    {
+        var shadow = GraphicsQuality.ShadowFor(ShadowCaster.Buildings);
+        foreach (var t in _tiles.Values) if (t.Mesh != null) t.Mesh.CastShadow = shadow;
+    }
+
     public override void _Ready()
     {
+        GraphicsQuality.Changed += OnQualityChanged;
         _mat = new ShaderMaterial { Shader = new Shader { Code = Shader } };
         _archive = Overture.OpenAsync("buildings");
         try
@@ -364,7 +376,7 @@ public partial class BuildingsLayer : Node3D
         }
         if (t.Mesh == null)
         {
-            t.Mesh = new MeshInstance3D { MaterialOverride = _mat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            t.Mesh = new MeshInstance3D { MaterialOverride = _mat, CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Buildings) };
             Planet.AddChild(t.Mesh);
         }
         t.Mesh.Mesh = mesh;
