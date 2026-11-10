@@ -12,7 +12,7 @@ namespace SteamEarth.Data;
 /// <summary>
 /// Lecteur minimal de GeoTIFF « cloud optimized » (COG) via requêtes HTTP partielles (Range) :
 /// on ne télécharge que l'en-tête puis les tuiles internes (souvent 1024×1024) dont on a besoin.
-/// Gère : TIFF classique et BigTIFF, petit-boutiste, tuilé, compression DEFLATE / sans compression,
+/// Gère : TIFF classique et BigTIFF, petit-boutiste, tuilé, compression DEFLATE / LZW / sans compression,
 /// prédicteurs 2 (entier) et 3 (flottant), échantillons float32 / int16 / uint16 / uint8, aperçus (overviews).
 /// Les octets téléchargés sont mis en cache sur disque : le jeu fonctionne ensuite hors ligne.
 /// </summary>
@@ -42,7 +42,8 @@ public sealed class CogReader
     CogReader(string url, string cacheDir) { Url = url; _cacheDir = cacheDir; }
 
     /// <summary>Ouvre un COG (en-tête depuis le cache disque ou le réseau). Retourne null si le fichier n'existe pas (404/403).</summary>
-    public static async Task<CogReader> OpenAsync(string url, string cacheDir)
+    /// <param name="headBytes">octets lus d'un coup au début du fichier (le reste de l'en-tête est lu au besoin).</param>
+    public static async Task<CogReader> OpenAsync(string url, string cacheDir, int headBytes = 65536)
     {
         var r = new CogReader(url, cacheDir);
         Directory.CreateDirectory(cacheDir);
@@ -52,7 +53,7 @@ public sealed class CogReader
         if (File.Exists(headPath)) r._head = await File.ReadAllBytesAsync(headPath);
         else
         {
-            r._head = await r.FetchAsync(0, 65536);
+            r._head = await r.FetchAsync(0, headBytes);
             if (r._head == null) { await File.WriteAllTextAsync(missingPath, url); return null; }
             await File.WriteAllBytesAsync(headPath, r._head);
         }
@@ -242,6 +243,7 @@ public sealed class CogReader
             int read = 0;
             while (read < raw.Length) { int r = z.Read(raw, read, raw.Length - read); if (r <= 0) break; read += r; }
         }
+        else if (Compression == 5) raw = LzwDecode(comp, w * h * bps);
         else throw new NotSupportedException($"Compression TIFF {Compression} non gérée");
 
         var outp = new float[w * h];
@@ -291,6 +293,61 @@ public sealed class CogReader
         {
             float nd = (float)NoData.Value;
             for (int i = 0; i < outp.Length; i++) if (outp[i] == nd) outp[i] = float.NaN;
+        }
+        return outp;
+    }
+
+    /// <summary>
+    /// Décompression LZW au format TIFF (codes de 9 à 12 bits, poids fort d'abord, changement de taille anticipé).
+    /// Chaque entrée du dictionnaire est une sous-chaîne déjà écrite dans la sortie : on ne garde que (début, longueur).
+    /// </summary>
+    public static byte[] LzwDecode(byte[] src, int expected)
+    {
+        var outp = new byte[expected];
+        var eStart = new int[4096];
+        var eLen = new int[4096];
+        int op = 0, width = 9, next = 258, prevStart = -1, prevLen = 0;
+        long bitPos = 0, totalBits = (long)src.Length * 8;
+        while (op < expected && bitPos + width <= totalBits)
+        {
+            int code = 0;
+            for (int b = 0; b < width; b++, bitPos++)
+                code = (code << 1) | ((src[bitPos >> 3] >> (7 - (int)(bitPos & 7))) & 1);
+            if (code == 257) break;            // fin d'information
+            if (code == 256)                   // remise à zéro du dictionnaire
+            {
+                width = 9; next = 258; prevStart = -1;
+                continue;
+            }
+            int start = op, len;
+            if (code < 256)
+            {
+                outp[op++] = (byte)code;
+                len = 1;
+            }
+            else if (code < next)
+            {
+                len = eLen[code];
+                int s = eStart[code];
+                for (int i = 0; i < len && op < expected; i++) outp[op++] = outp[s + i];
+            }
+            else if (code == next && prevStart >= 0)
+            {
+                // cas « KwKwK » : la chaîne précédente suivie de son premier octet
+                len = prevLen + 1;
+                for (int i = 0; i < prevLen && op < expected; i++) outp[op++] = outp[prevStart + i];
+                if (op < expected) outp[op++] = outp[prevStart];
+            }
+            else throw new InvalidDataException("Flux LZW invalide");
+
+            if (prevStart >= 0 && next < 4096)
+            {
+                eStart[next] = prevStart;
+                eLen[next] = prevLen + 1;
+                next++;
+            }
+            prevStart = start; prevLen = len;
+            if (next >= (1 << width) - 1 && width < 12) width++;
         }
         return outp;
     }

@@ -8,7 +8,7 @@ using Godot;
 namespace SteamEarth.Data;
 
 /// <summary>
-/// Raster mondial découpé en fichiers COG par cases de N degrés (ex. Copernicus 1°, WorldCover 3°),
+/// Raster découpé en fichiers COG (ex. Copernicus par cases de 1°, WorldCover 3°, swissALTI3D 1 km en LV95),
 /// lu à la demande et sans jamais bloquer : si une tuile n'est pas encore là, on lance son téléchargement
 /// et on répond « en attente » ; l'appelant utilise une donnée plus grossière en attendant.
 /// </summary>
@@ -21,11 +21,17 @@ public sealed class StreamedRaster
     public static int Downloading => _inFlight;
     static int _inFlight;
 
+    /// <summary>
+    /// Trouve le fichier qui couvre (lat, lon) : clé de cache, URL, et coordonnées du point dans la projection
+    /// du fichier (x vers l'est, y vers le nord). Retourne false si aucun fichier ne couvre ce point.
+    /// </summary>
+    public delegate bool Locator(double lat, double lon, out string key, out string url, out double x, out double y);
+
     readonly string _name;
-    readonly double _cellDeg;
-    readonly Func<int, int, string> _urlFor; // (latCase, lonCase) → URL
+    readonly Locator _locate;
     readonly string _cacheRoot;
     readonly int _maxTiles;
+    readonly int _headBytes;
 
     readonly ConcurrentDictionary<string, Task<CogReader>> _readers = new();
     readonly ConcurrentDictionary<(string, int, int, int), Entry> _tiles = new();
@@ -35,9 +41,22 @@ public sealed class StreamedRaster
     sealed class Entry { public float[] Data; public long LastUse; }
     static readonly float[] Empty = Array.Empty<float>();
 
+    /// <summary>Raster en latitude/longitude, un fichier par case de <paramref name="cellDeg"/> degrés.</summary>
     public StreamedRaster(string name, double cellDeg, Func<int, int, string> urlFor, int maxTilesInMemory)
+        : this(name, (double lat, double lon, out string key, out string url, out double x, out double y) =>
+        {
+            int cLat = (int)(Math.Floor(lat / cellDeg) * cellDeg);
+            int cLon = (int)(Math.Floor(lon / cellDeg) * cellDeg);
+            key = $"{cLat}_{cLon}";
+            url = urlFor(cLat, cLon);
+            x = lon; y = lat;
+            return true;
+        }, maxTilesInMemory) { }
+
+    /// <summary>Raster dans une projection quelconque : <paramref name="locate"/> choisit le fichier et projette le point.</summary>
+    public StreamedRaster(string name, Locator locate, int maxTilesInMemory, int headBytes = 65536)
     {
-        _name = name; _cellDeg = cellDeg; _urlFor = urlFor; _maxTiles = maxTilesInMemory;
+        _name = name; _locate = locate; _maxTiles = maxTilesInMemory; _headBytes = headBytes;
         _cacheRoot = Path.Combine(OS.GetUserDataDir(), "cache", name);
     }
 
@@ -50,17 +69,15 @@ public sealed class StreamedRaster
     public Result Sample(double lat, double lon, int level, bool bilinear, bool fetch, out float value)
     {
         value = float.NaN;
-        int cLat = (int)(Math.Floor(lat / _cellDeg) * _cellDeg);
-        int cLon = (int)(Math.Floor(lon / _cellDeg) * _cellDeg);
-        string key = $"{cLat}_{cLon}";
+        if (!_locate(lat, lon, out string key, out string url, out double gx, out double gy)) return Result.Absent;
         if (!_readers.TryGetValue(key, out var task))
         {
             if (!fetch) return Result.Pending;
-            string url = _urlFor(cLat, cLon);
             string dir = Path.Combine(_cacheRoot, key);
+            int head = _headBytes;
             task = _readers.GetOrAdd(key, _ => Task.Run(async () =>
             {
-                try { return await CogReader.OpenAsync(url, dir); }
+                try { return await CogReader.OpenAsync(url, dir, head); }
                 catch (Exception e) { GD.PrintErr($"[{_name}] {url} : {e.Message}"); return null; }
                 finally { Interlocked.Increment(ref DataVersion); }
             }));
@@ -73,8 +90,8 @@ public sealed class StreamedRaster
         var l0 = r.Levels[0];
         var lv = r.Levels[level];
         double f = (double)lv.Width / l0.Width;
-        double px = ((lon - r.OriginX) / r.PixelX) * f - 0.5;
-        double py = ((r.OriginY - lat) / r.PixelY) * f - 0.5;
+        double px = ((gx - r.OriginX) / r.PixelX) * f - 0.5;
+        double py = ((r.OriginY - gy) / r.PixelY) * f - 0.5;
 
         if (!bilinear)
         {

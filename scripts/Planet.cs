@@ -14,7 +14,8 @@ namespace SteamEarth;
 /// </summary>
 public partial class Planet : Node3D
 {
-    [Export] public int MaxLevel = 15;          // niveau 15 ≈ 10 m entre sommets
+    [Export] public int MaxLevel = 15;          // niveau 15 ≈ 10 m entre sommets (données 30 m)
+    [Export] public int HdMaxLevel = 19;        // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
     [Export] public double SplitFactor = 1.6;   // plus grand = plus de détail, plus de chunks
     [Export] public int Resolution = 32;        // quads par côté de chunk
     [Export] public int MaxConcurrentBuilds = 6;
@@ -45,6 +46,7 @@ public partial class Planet : Node3D
         public double Edge; // longueur approximative d'un côté (m)
         public bool Requested, Ready, Dead;
         public bool Incomplete; // construit avec des données provisoires (téléchargement en cours)
+        public bool? Hd;        // le chunk touche une zone haute définition (calculé au besoin)
         public int BuiltVersion;
     }
 
@@ -139,12 +141,25 @@ public partial class Planet : Node3D
 
     bool WantsSplit(QuadNode n, Vec3d cam)
     {
-        if (n.Level >= MaxLevel) return false;
+        if (n.Level >= HdMaxLevel) return false;
+        if (n.Level >= MaxLevel && !(n.Hd ??= TouchesHd(n))) return false;
         // Distance au relief réel et non au niveau de la mer : sinon, à 3 000 m d'altitude,
         // le joueur serait « loin » de tous les chunks et le relief resterait grossier sous ses pieds.
         double dist = (cam - n.LodCenter).Length() - n.Edge * 0.75;
         if (dist > _horizon) return false; // derrière l'horizon : inutile de détailler
         return dist < SplitFactor * n.Edge;
+    }
+
+    /// <summary>Vrai si un des coins ou le centre du chunk est couvert par des données haute définition.</summary>
+    static bool TouchesHd(QuadNode n)
+    {
+        for (int j = 0; j <= 2; j++)
+        for (int i = 0; i <= 2; i++)
+        {
+            Geo.ToLatLon(Geo.CubeToSphere(n.Face, n.U0 + n.Size * i / 2, n.V0 + n.Size * j / 2), out double lat, out double lon);
+            if (SwissAlti3D.Covers(lat, lon)) return true;
+        }
+        return false;
     }
 
     void Show(QuadNode n, Vec3d cam, bool visible)
