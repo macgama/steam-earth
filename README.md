@@ -26,6 +26,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
 | R | revenir à l'heure réelle |
+| Tab (ou bouton « Pays ») | menu des pays : clic = 500 m au-dessus de la capitale, recherche par nom |
+| B | afficher / masquer frontières et capitales |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -77,6 +79,20 @@ Pour mettre à jour la carte quand une nouvelle version sort :
 Après la fusion dans `main`, lancer une première fois le workflow à la main :
 *Actions → Météo GFS → Run workflow*.
 
+## Frontières et capitales
+
+- `tools/geo/build_geo.py` extrait de **Natural Earth** (domaine public) les frontières terrestres et les capitales de
+  203 pays et territoires (noms en français) → `data/geo/borders.bin.gz` et `data/geo/countries.json`.
+- `PoliticalLayer.cs` : frontières en lignes fines posées sur le relief, capitales en étiquettes visibles à moins de ~800 km.
+- `CountryMenu.cs` : liste alphabétique « Pays (Capitale) » avec recherche ; un clic place le joueur 500 m au-dessus de
+  la capitale, 1,5 km au sud, en la regardant.
+- Les frontières suivent la représentation *de facto* de Natural Earth ; quelques choix de capitales sont fixés dans le
+  script (Pretoria, Astana, Dodoma, Porto-Novo…).
+
+| Menu des pays | Arrivée au-dessus de Berne | Frontière franco-suisse sur le Léman |
+|---|---|---|
+| ![](docs/menu-pays.jpg) | ![](docs/capitale-berne.jpg) | ![](docs/frontiere-leman.jpg) |
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -85,6 +101,7 @@ Après la fusion dans `main`, lancer une première fois le workflow à la main :
 | `data/detail/*.hgt.gz` | Copernicus DEM GLO-30 © DLR e.V. 2010-2014 et © Airbus 2014-2018, fourni par l'ESA | 30 m |
 | `data/detail/*.wat.gz` | ESA WorldCover 2021 (classe « eau ») © ESA | 10 m → 30 m |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
+| `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 
 Couverture actuelle en 30 m : 45–48°N, 5–11°E (Suisse et alentours).

@@ -19,6 +19,10 @@ public partial class Main : Node3D
     DirectionalLight3D _sun;
     Weather _weather;
     Atmosphere _atmosphere;
+    PoliticalLayer _political;
+    CountryMenu _menu;
+    string _gotoCountry;
+    bool _openMenu;
     string _shotPath;
     static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
     int _frames, _idleFrames, _minFrames = 30;
@@ -27,6 +31,7 @@ public partial class Main : Node3D
     {
         HeightProvider.Init();
         TimeZones.Init();
+        Geography.Init();
 
         _camera = new FlyCamera { Name = "Camera" };
         AddChild(_camera);
@@ -59,6 +64,10 @@ public partial class Main : Node3D
         AddChild(_weather);
         _atmosphere = new Atmosphere { Name = "Atmosphere", Camera = _camera, Planet = _planet, Weather = _weather, Sun = _sun, Env = _environment };
         AddChild(_atmosphere);
+        _political = new PoliticalLayer { Name = "Political", Camera = _camera, Planet = _planet };
+        AddChild(_political);
+        _menu = new CountryMenu { Name = "CountryMenu", Camera = _camera };
+        AddChild(_menu);
 
         var layer = new CanvasLayer();
         _hud = new Label { Position = new Vector2(12, 10) };
@@ -76,6 +85,8 @@ public partial class Main : Node3D
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
+            if (a.StartsWith("--country=")) _gotoCountry = a.Substring(10);
+            if (a == "--menu") _openMenu = true;
             if (a == "--autowalk") { walk = true; _camera.AutoForward = true; _minFrames = 600; }
             if (a.StartsWith("--at="))
             {
@@ -88,6 +99,12 @@ public partial class Main : Node3D
         _camera._UnhandledInput(key);
         if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
         if (walk) _camera.SetWalk(true);
+        if (_gotoCountry != null)
+        {
+            var c = Geography.Countries.Find(x => x.Name == _gotoCountry);
+            if (c != null) _menu.GoTo(c);
+        }
+        if (_openMenu) _menu.CallDeferred(CountryMenu.MethodName.Toggle);
     }
 
     public override void _Process(double delta)
@@ -110,11 +127,11 @@ public partial class Main : Node3D
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court)  1-9 lieux  +/− heure  R heure réelle";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court)  1-9 lieux  +/− heure  R heure réelle  Tab pays  B frontières";
 
         if (_shotPath != null)
         {
-            _idleFrames = _planet.Idle ? _idleFrames + 1 : 0;
+            _idleFrames = _planet.Idle && _political.Ready ? _idleFrames + 1 : 0;
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000)
             {
                 var img = GetViewport().GetTexture().GetImage();

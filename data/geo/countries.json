@@ -1,0 +1,1423 @@
+[
+{
+"name": "Afghanistan",
+"capital": "Kaboul",
+"lat": 34.51864,
+"lon": 69.18131,
+"iso": "AF"
+},
+{
+"name": "Afrique du Sud",
+"capital": "Pretoria",
+"lat": -25.7069,
+"lon": 28.2294,
+"iso": "ZA"
+},
+{
+"name": "Åland",
+"capital": "Mariehamn",
+"lat": 60.097,
+"lon": 19.949,
+"iso": "AX"
+},
+{
+"name": "Albanie",
+"capital": "Tirana",
+"lat": 41.32754,
+"lon": 19.81888,
+"iso": "AL"
+},
+{
+"name": "Algérie",
+"capital": "Alger",
+"lat": 36.76501,
+"lon": 3.04861,
+"iso": "DZ"
+},
+{
+"name": "Allemagne",
+"capital": "Berlin",
+"lat": 52.52376,
+"lon": 13.3996,
+"iso": "DE"
+},
+{
+"name": "Andorre",
+"capital": "Andorre-la-Vieille",
+"lat": 42.5,
+"lon": 1.51649,
+"iso": "AD"
+},
+{
+"name": "Angola",
+"capital": "Luanda",
+"lat": -8.83634,
+"lon": 13.23248,
+"iso": "AO"
+},
+{
+"name": "Antigua-et-Barbuda",
+"capital": "Saint John's",
+"lat": 17.11804,
+"lon": -61.85003,
+"iso": "AG"
+},
+{
+"name": "Arabie saoudite",
+"capital": "Riyad",
+"lat": 24.64278,
+"lon": 46.7708,
+"iso": "SA"
+},
+{
+"name": "Argentine",
+"capital": "Buenos Aires",
+"lat": -34.60056,
+"lon": -58.39948,
+"iso": "AR"
+},
+{
+"name": "Arménie",
+"capital": "Erevan",
+"lat": 40.1831,
+"lon": 44.51161,
+"iso": "AM"
+},
+{
+"name": "Aruba",
+"capital": "Oranjestad",
+"lat": 12.53038,
+"lon": -70.02899,
+"iso": "AW"
+},
+{
+"name": "Australie",
+"capital": "Canberra",
+"lat": -35.28303,
+"lon": 149.12903,
+"iso": "AU"
+},
+{
+"name": "Autriche",
+"capital": "Vienne",
+"lat": 48.20196,
+"lon": 16.36469,
+"iso": "AT"
+},
+{
+"name": "Azerbaïdjan",
+"capital": "Bakou",
+"lat": 40.39722,
+"lon": 49.86027,
+"iso": "AZ"
+},
+{
+"name": "Bahamas",
+"capital": "Nassau",
+"lat": 25.08339,
+"lon": -77.35004,
+"iso": "BS"
+},
+{
+"name": "Bahreïn",
+"capital": "Manama",
+"lat": 26.23614,
+"lon": 50.58305,
+"iso": "BH"
+},
+{
+"name": "Bangladesh",
+"capital": "Dacca",
+"lat": 23.72501,
+"lon": 90.40663,
+"iso": "BD"
+},
+{
+"name": "Barbade",
+"capital": "Bridgetown",
+"lat": 13.102,
+"lon": -59.61653,
+"iso": "BB"
+},
+{
+"name": "Belgique",
+"capital": "Bruxelles",
+"lat": 50.83526,
+"lon": 4.33137,
+"iso": "BE"
+},
+{
+"name": "Belize",
+"capital": "Belmopan",
+"lat": 17.25203,
+"lon": -88.76707,
+"iso": "BZ"
+},
+{
+"name": "Bénin",
+"capital": "Porto-Novo",
+"lat": 6.4969,
+"lon": 2.6289,
+"iso": "BJ"
+},
+{
+"name": "Bhoutan",
+"capital": "Thimphou",
+"lat": 27.47299,
+"lon": 89.63901,
+"iso": "BT"
+},
+{
+"name": "Biélorussie",
+"capital": "Minsk",
+"lat": 53.90192,
+"lon": 27.56468,
+"iso": "BY"
+},
+{
+"name": "Birmanie",
+"capital": "Naypyidaw",
+"lat": 19.7685,
+"lon": 96.11667,
+"iso": "MM"
+},
+{
+"name": "Bolivie",
+"capital": "Sucre",
+"lat": -19.04097,
+"lon": -65.25952,
+"iso": "BO"
+},
+{
+"name": "Bosnie-Herzégovine",
+"capital": "Sarajevo",
+"lat": 43.85002,
+"lon": 18.383,
+"iso": "BA"
+},
+{
+"name": "Botswana",
+"capital": "Gaborone",
+"lat": -24.64631,
+"lon": 25.91195,
+"iso": "BW"
+},
+{
+"name": "Brésil",
+"capital": "Brasilia",
+"lat": -15.78139,
+"lon": -47.918,
+"iso": "BR"
+},
+{
+"name": "Brunei",
+"capital": "Bandar Seri Begawan",
+"lat": 4.88333,
+"lon": 114.93328,
+"iso": "BN"
+},
+{
+"name": "Bulgarie",
+"capital": "Sofia",
+"lat": 42.6853,
+"lon": 23.31471,
+"iso": "BG"
+},
+{
+"name": "Burkina Faso",
+"capital": "Ouagadougou",
+"lat": 12.37226,
+"lon": -1.52667,
+"iso": "BF"
+},
+{
+"name": "Burundi",
+"capital": "Bujumbura",
+"lat": -3.37609,
+"lon": 29.36001,
+"iso": "BI"
+},
+{
+"name": "Cambodge",
+"capital": "Phnom Penh",
+"lat": 11.55198,
+"lon": 104.91469,
+"iso": "KH"
+},
+{
+"name": "Cameroun",
+"capital": "Yaoundé",
+"lat": 3.86865,
+"lon": 11.5147,
+"iso": "CM"
+},
+{
+"name": "Canada",
+"capital": "Ottawa",
+"lat": 45.41864,
+"lon": -75.70196,
+"iso": "CA"
+},
+{
+"name": "Cap-Vert",
+"capital": "Praia",
+"lat": 14.9167,
+"lon": -23.51669,
+"iso": "CV"
+},
+{
+"name": "Chili",
+"capital": "Santiago",
+"lat": -33.44807,
+"lon": -70.66899,
+"iso": "CL"
+},
+{
+"name": "Chine",
+"capital": "Pékin",
+"lat": 39.93084,
+"lon": 116.38634,
+"iso": "CN"
+},
+{
+"name": "Chypre",
+"capital": "Nicosie",
+"lat": 35.16668,
+"lon": 33.36664,
+"iso": "CY"
+},
+{
+"name": "Cité du Vatican",
+"capital": "Cité du Vatican",
+"lat": 41.90328,
+"lon": 12.45339,
+"iso": "VA"
+},
+{
+"name": "Colombie",
+"capital": "Bogota",
+"lat": 4.59837,
+"lon": -74.08529,
+"iso": "CO"
+},
+{
+"name": "Comores",
+"capital": "Moroni",
+"lat": -11.70416,
+"lon": 43.24024,
+"iso": "KM"
+},
+{
+"name": "Corée du Nord",
+"capital": "Pyongyang",
+"lat": 39.02139,
+"lon": 125.75275,
+"iso": "KP"
+},
+{
+"name": "Corée du Sud",
+"capital": "Séoul",
+"lat": 37.56829,
+"lon": 126.99778,
+"iso": "KR"
+},
+{
+"name": "Costa Rica",
+"capital": "San José",
+"lat": 9.93696,
+"lon": -84.086,
+"iso": "CR"
+},
+{
+"name": "Côte d'Ivoire",
+"capital": "Yamoussoukro",
+"lat": 6.81838,
+"lon": -5.2755,
+"iso": "CI"
+},
+{
+"name": "Croatie",
+"capital": "Zagreb",
+"lat": 45.80001,
+"lon": 16.0,
+"iso": "HR"
+},
+{
+"name": "Cuba",
+"capital": "La Havane",
+"lat": 23.1339,
+"lon": -82.36613,
+"iso": "CU"
+},
+{
+"name": "Danemark",
+"capital": "Copenhague",
+"lat": 55.68051,
+"lon": 12.56154,
+"iso": "DK"
+},
+{
+"name": "Djibouti",
+"capital": "Djibouti",
+"lat": 11.59502,
+"lon": 43.148,
+"iso": "DJ"
+},
+{
+"name": "Dominique",
+"capital": "Roseau",
+"lat": 15.30102,
+"lon": -61.38701,
+"iso": "DM"
+},
+{
+"name": "Égypte",
+"capital": "Le Caire",
+"lat": 30.05191,
+"lon": 31.24802,
+"iso": "EG"
+},
+{
+"name": "Émirats arabes unis",
+"capital": "Abou Dabi",
+"lat": 24.46668,
+"lon": 54.36659,
+"iso": "AE"
+},
+{
+"name": "Équateur",
+"capital": "Quito",
+"lat": -0.21304,
+"lon": -78.502,
+"iso": "EC"
+},
+{
+"name": "Érythrée",
+"capital": "Asmara",
+"lat": 15.33334,
+"lon": 38.93332,
+"iso": "ER"
+},
+{
+"name": "Espagne",
+"capital": "Madrid",
+"lat": 40.40197,
+"lon": -3.6853,
+"iso": "ES"
+},
+{
+"name": "Estonie",
+"capital": "Tallinn",
+"lat": 59.43388,
+"lon": 24.72804,
+"iso": "EE"
+},
+{
+"name": "Eswatini",
+"capital": "Mbabane",
+"lat": -26.31665,
+"lon": 31.13333,
+"iso": "SZ"
+},
+{
+"name": "États fédérés de Micronésie",
+"capital": "Palikir",
+"lat": 6.91664,
+"lon": 158.14997,
+"iso": "FM"
+},
+{
+"name": "États-Unis",
+"capital": "Washington",
+"lat": 38.90149,
+"lon": -77.01136,
+"iso": "US"
+},
+{
+"name": "Éthiopie",
+"capital": "Addis-Abeba",
+"lat": 9.03526,
+"lon": 38.69806,
+"iso": "ET"
+},
+{
+"name": "Fidji",
+"capital": "Suva",
+"lat": -18.13302,
+"lon": 178.44171,
+"iso": "FJ"
+},
+{
+"name": "Finlande",
+"capital": "Helsinki",
+"lat": 60.17751,
+"lon": 24.93218,
+"iso": "FI"
+},
+{
+"name": "France",
+"capital": "Paris",
+"lat": 48.86864,
+"lon": 2.33139,
+"iso": "FRA"
+},
+{
+"name": "Gabon",
+"capital": "Libreville",
+"lat": 0.38539,
+"lon": 9.45796,
+"iso": "GA"
+},
+{
+"name": "Gambie",
+"capital": "Banjul",
+"lat": 13.45388,
+"lon": -16.5917,
+"iso": "GM"
+},
+{
+"name": "Géorgie",
+"capital": "Tbilissi",
+"lat": 41.72696,
+"lon": 44.78885,
+"iso": "GE"
+},
+{
+"name": "Ghana",
+"capital": "Accra",
+"lat": 5.55198,
+"lon": -0.21866,
+"iso": "GH"
+},
+{
+"name": "Grèce",
+"capital": "Athènes",
+"lat": 37.98527,
+"lon": 23.73137,
+"iso": "GR"
+},
+{
+"name": "Grenade",
+"capital": "Saint-Georges",
+"lat": 12.05263,
+"lon": -61.74164,
+"iso": "GD"
+},
+{
+"name": "Groenland",
+"capital": "Nuuk",
+"lat": 64.19828,
+"lon": -51.73266,
+"iso": "GL"
+},
+{
+"name": "Guatemala",
+"capital": "Guatemala-Ville",
+"lat": 14.62308,
+"lon": -90.52891,
+"iso": "GT"
+},
+{
+"name": "Guinée",
+"capital": "Conakry",
+"lat": 9.53347,
+"lon": -13.68218,
+"iso": "GN"
+},
+{
+"name": "Guinée équatoriale",
+"capital": "Malabo",
+"lat": 3.75001,
+"lon": 8.78328,
+"iso": "GQ"
+},
+{
+"name": "Guinée-Bissau",
+"capital": "Bissau",
+"lat": 11.86502,
+"lon": -15.59836,
+"iso": "GW"
+},
+{
+"name": "Guyana",
+"capital": "Georgetown",
+"lat": 6.80197,
+"lon": -58.16703,
+"iso": "GY"
+},
+{
+"name": "Haïti",
+"capital": "Port-au-Prince",
+"lat": 18.54297,
+"lon": -72.33798,
+"iso": "HT"
+},
+{
+"name": "Honduras",
+"capital": "Tegucigalpa",
+"lat": 14.10399,
+"lon": -87.21948,
+"iso": "HN"
+},
+{
+"name": "Hong Kong",
+"capital": "Hong Kong",
+"lat": 22.30693,
+"lon": 114.18306,
+"iso": "HK"
+},
+{
+"name": "Hongrie",
+"capital": "Budapest",
+"lat": 47.50195,
+"lon": 19.08138,
+"iso": "HU"
+},
+{
+"name": "île de Man",
+"capital": "Douglas",
+"lat": 54.15043,
+"lon": -4.48002,
+"iso": "IM"
+},
+{
+"name": "Îles Marshall",
+"capital": "Majuro",
+"lat": 7.103,
+"lon": 171.38,
+"iso": "MH"
+},
+{
+"name": "Îles Salomon",
+"capital": "Honiara",
+"lat": -9.43799,
+"lon": 159.94977,
+"iso": "SB"
+},
+{
+"name": "Inde",
+"capital": "New Delhi",
+"lat": 28.60002,
+"lon": 77.19998,
+"iso": "IN"
+},
+{
+"name": "Indonésie",
+"capital": "Jakarta",
+"lat": -6.17247,
+"lon": 106.82749,
+"iso": "ID"
+},
+{
+"name": "Irak",
+"capital": "Bagdad",
+"lat": 33.34059,
+"lon": 44.39192,
+"iso": "IQ"
+},
+{
+"name": "Iran",
+"capital": "Téhéran",
+"lat": 35.67389,
+"lon": 51.4224,
+"iso": "IR"
+},
+{
+"name": "Irlande",
+"capital": "Dublin",
+"lat": 53.33501,
+"lon": -6.25085,
+"iso": "IE"
+},
+{
+"name": "Islande",
+"capital": "Reykjavik",
+"lat": 64.15002,
+"lon": -21.95002,
+"iso": "IS"
+},
+{
+"name": "Israël",
+"capital": "Jérusalem",
+"lat": 31.77841,
+"lon": 35.20663,
+"iso": "IL"
+},
+{
+"name": "Italie",
+"capital": "Rome",
+"lat": 41.8979,
+"lon": 12.48131,
+"iso": "IT"
+},
+{
+"name": "Jamaïque",
+"capital": "Kingston",
+"lat": 17.97708,
+"lon": -76.76743,
+"iso": "JM"
+},
+{
+"name": "Japon",
+"capital": "Tokyo",
+"lat": 35.68696,
+"lon": 139.74946,
+"iso": "JP"
+},
+{
+"name": "Jordanie",
+"capital": "Amman",
+"lat": 31.95197,
+"lon": 35.93135,
+"iso": "JO"
+},
+{
+"name": "Kazakhstan",
+"capital": "Astana",
+"lat": 51.1694,
+"lon": 71.4491,
+"iso": "KZ"
+},
+{
+"name": "Kenya",
+"capital": "Nairobi",
+"lat": -1.2814,
+"lon": 36.81471,
+"iso": "KE"
+},
+{
+"name": "Kirghizistan",
+"capital": "Bichkek",
+"lat": 42.87503,
+"lon": 74.58326,
+"iso": "KG"
+},
+{
+"name": "Kiribati",
+"capital": "Tarawa-Sud",
+"lat": 1.33819,
+"lon": 173.01757,
+"iso": "KI"
+},
+{
+"name": "Kosovo",
+"capital": "Pristina",
+"lat": 42.66671,
+"lon": 21.16598,
+"iso": "KOS"
+},
+{
+"name": "Koweït",
+"capital": "Koweït",
+"lat": 29.37166,
+"lon": 47.97635,
+"iso": "KW"
+},
+{
+"name": "Laos",
+"capital": "Vientiane",
+"lat": 17.96669,
+"lon": 102.59998,
+"iso": "LA"
+},
+{
+"name": "Lesotho",
+"capital": "Maseru",
+"lat": -29.31667,
+"lon": 27.48327,
+"iso": "LS"
+},
+{
+"name": "Lettonie",
+"capital": "Riga",
+"lat": 56.95002,
+"lon": 24.09997,
+"iso": "LV"
+},
+{
+"name": "Liban",
+"capital": "Beyrouth",
+"lat": 33.87392,
+"lon": 35.50776,
+"iso": "LB"
+},
+{
+"name": "Liberia",
+"capital": "Monrovia",
+"lat": 6.31458,
+"lon": -10.79966,
+"iso": "LR"
+},
+{
+"name": "Libye",
+"capital": "Tripoli",
+"lat": 32.8925,
+"lon": 13.18001,
+"iso": "LY"
+},
+{
+"name": "Liechtenstein",
+"capital": "Vaduz",
+"lat": 47.13372,
+"lon": 9.51667,
+"iso": "LI"
+},
+{
+"name": "Lituanie",
+"capital": "Vilnius",
+"lat": 54.68337,
+"lon": 25.31664,
+"iso": "LT"
+},
+{
+"name": "Luxembourg",
+"capital": "Luxembourg",
+"lat": 49.61166,
+"lon": 6.13,
+"iso": "LU"
+},
+{
+"name": "Macédoine du Nord",
+"capital": "Skopje",
+"lat": 42.00001,
+"lon": 21.43346,
+"iso": "MK"
+},
+{
+"name": "Madagascar",
+"capital": "Antananarivo",
+"lat": -18.91469,
+"lon": 47.51468,
+"iso": "MG"
+},
+{
+"name": "Malaisie",
+"capital": "Kuala Lumpur",
+"lat": 3.16861,
+"lon": 101.69804,
+"iso": "MY"
+},
+{
+"name": "Malawi",
+"capital": "Lilongwe",
+"lat": -13.9833,
+"lon": 33.7833,
+"iso": "MW"
+},
+{
+"name": "Maldives",
+"capital": "Malé",
+"lat": 4.16671,
+"lon": 73.49995,
+"iso": "MV"
+},
+{
+"name": "Mali",
+"capital": "Bamako",
+"lat": 12.65196,
+"lon": -8.00198,
+"iso": "ML"
+},
+{
+"name": "Malte",
+"capital": "La Valette",
+"lat": 35.89973,
+"lon": 14.51471,
+"iso": "MT"
+},
+{
+"name": "Maroc",
+"capital": "Rabat",
+"lat": 34.02531,
+"lon": -6.83641,
+"iso": "MA"
+},
+{
+"name": "Maurice",
+"capital": "Port-Louis",
+"lat": -20.16664,
+"lon": 57.49999,
+"iso": "MU"
+},
+{
+"name": "Mauritanie",
+"capital": "Nouakchott",
+"lat": 18.08643,
+"lon": -15.97534,
+"iso": "MR"
+},
+{
+"name": "Mexique",
+"capital": "Mexico",
+"lat": 19.44439,
+"lon": -99.13293,
+"iso": "MX"
+},
+{
+"name": "Moldavie",
+"capital": "Chișinău",
+"lat": 47.00502,
+"lon": 28.85771,
+"iso": "MD"
+},
+{
+"name": "Monaco",
+"capital": "Monaco",
+"lat": 43.73965,
+"lon": 7.40691,
+"iso": "MC"
+},
+{
+"name": "Mongolie",
+"capital": "Oulan-Bator",
+"lat": 47.91862,
+"lon": 106.91467,
+"iso": "MN"
+},
+{
+"name": "Monténégro",
+"capital": "Podgorica",
+"lat": 42.46597,
+"lon": 19.26631,
+"iso": "ME"
+},
+{
+"name": "Mozambique",
+"capital": "Maputo",
+"lat": -25.95333,
+"lon": 32.58722,
+"iso": "MZ"
+},
+{
+"name": "Namibie",
+"capital": "Windhoek",
+"lat": -22.57001,
+"lon": 17.08355,
+"iso": "NA"
+},
+{
+"name": "Nauru",
+"capital": "Yaren",
+"lat": -0.5467,
+"lon": 166.9211,
+"iso": "NR"
+},
+{
+"name": "Népal",
+"capital": "Katmandou",
+"lat": 27.71864,
+"lon": 85.3147,
+"iso": "NP"
+},
+{
+"name": "Nicaragua",
+"capital": "Managua",
+"lat": 12.15496,
+"lon": -86.27044,
+"iso": "NI"
+},
+{
+"name": "Niger",
+"capital": "Niamey",
+"lat": 13.51865,
+"lon": 2.11471,
+"iso": "NE"
+},
+{
+"name": "Nigeria",
+"capital": "Abuja",
+"lat": 9.08528,
+"lon": 7.53138,
+"iso": "NG"
+},
+{
+"name": "Norvège",
+"capital": "Oslo",
+"lat": 59.91864,
+"lon": 10.74803,
+"iso": "NOR"
+},
+{
+"name": "Nouvelle-Zélande",
+"capital": "Wellington",
+"lat": -41.29999,
+"lon": 174.78327,
+"iso": "NZ"
+},
+{
+"name": "Oman",
+"capital": "Mascate",
+"lat": 23.61332,
+"lon": 58.59331,
+"iso": "OM"
+},
+{
+"name": "Ouganda",
+"capital": "Kampala",
+"lat": 0.31861,
+"lon": 32.58138,
+"iso": "UG"
+},
+{
+"name": "Ouzbékistan",
+"capital": "Tachkent",
+"lat": 41.31365,
+"lon": 69.29299,
+"iso": "UZ"
+},
+{
+"name": "Pakistan",
+"capital": "Islamabad",
+"lat": 33.70194,
+"lon": 73.16469,
+"iso": "PK"
+},
+{
+"name": "Palaos",
+"capital": "Melekeok",
+"lat": 7.4874,
+"lon": 134.62655,
+"iso": "PW"
+},
+{
+"name": "Palestine",
+"capital": "Ramallah",
+"lat": 31.90294,
+"lon": 35.20621,
+"iso": "PS"
+},
+{
+"name": "Panama",
+"capital": "Panama",
+"lat": 8.96996,
+"lon": -79.53498,
+"iso": "PA"
+},
+{
+"name": "Papouasie-Nouvelle-Guinée",
+"capital": "Port Moresby",
+"lat": -9.46471,
+"lon": 147.1925,
+"iso": "PG"
+},
+{
+"name": "Paraguay",
+"capital": "Asuncion",
+"lat": -25.29446,
+"lon": -57.64345,
+"iso": "PY"
+},
+{
+"name": "Pays-Bas",
+"capital": "Amsterdam",
+"lat": 52.35191,
+"lon": 4.91469,
+"iso": "NL"
+},
+{
+"name": "Pérou",
+"capital": "Lima",
+"lat": -12.04607,
+"lon": -77.05201,
+"iso": "PE"
+},
+{
+"name": "Philippines",
+"capital": "Manille",
+"lat": 14.6061,
+"lon": 120.98027,
+"iso": "PH"
+},
+{
+"name": "Pologne",
+"capital": "Varsovie",
+"lat": 52.25195,
+"lon": 20.99805,
+"iso": "PL"
+},
+{
+"name": "Portugal",
+"capital": "Lisbonne",
+"lat": 38.72467,
+"lon": -9.14681,
+"iso": "PT"
+},
+{
+"name": "Qatar",
+"capital": "Doha",
+"lat": 25.28656,
+"lon": 51.53297,
+"iso": "QA"
+},
+{
+"name": "République centrafricaine",
+"capital": "Bangui",
+"lat": 4.36664,
+"lon": 18.55829,
+"iso": "CF"
+},
+{
+"name": "République démocratique du Congo",
+"capital": "Kinshasa",
+"lat": -4.32778,
+"lon": 15.31303,
+"iso": "CD"
+},
+{
+"name": "République dominicaine",
+"capital": "Saint-Domingue",
+"lat": 18.47202,
+"lon": -69.90203,
+"iso": "DO"
+},
+{
+"name": "République du Congo",
+"capital": "Brazzaville",
+"lat": -4.25724,
+"lon": 15.28274,
+"iso": "CG"
+},
+{
+"name": "Roumanie",
+"capital": "Bucarest",
+"lat": 44.43532,
+"lon": 26.098,
+"iso": "RO"
+},
+{
+"name": "Royaume-Uni",
+"capital": "Londres",
+"lat": 51.50194,
+"lon": -0.11867,
+"iso": "GB"
+},
+{
+"name": "Russie",
+"capital": "Moscou",
+"lat": 55.75411,
+"lon": 37.61358,
+"iso": "RU"
+},
+{
+"name": "Rwanda",
+"capital": "Kigali",
+"lat": -1.95164,
+"lon": 30.05859,
+"iso": "RW"
+},
+{
+"name": "Saint-Christophe-et-Niévès",
+"capital": "Basseterre",
+"lat": 17.30203,
+"lon": -62.71701,
+"iso": "KN"
+},
+{
+"name": "Saint-Marin",
+"capital": "Saint-Marin",
+"lat": 43.9361,
+"lon": 12.44177,
+"iso": "SM"
+},
+{
+"name": "Saint-Vincent-et-les-Grenadines",
+"capital": "Kingstown",
+"lat": 13.14828,
+"lon": -61.21206,
+"iso": "VC"
+},
+{
+"name": "Sainte-Lucie",
+"capital": "Castries",
+"lat": 14.00197,
+"lon": -61.00001,
+"iso": "LC"
+},
+{
+"name": "Salvador",
+"capital": "San Salvador",
+"lat": 13.71195,
+"lon": -89.20499,
+"iso": "SV"
+},
+{
+"name": "Samoa",
+"capital": "Apia",
+"lat": -13.84154,
+"lon": -171.73864,
+"iso": "WS"
+},
+{
+"name": "Sao Tomé-et-Principe",
+"capital": "São Tomé",
+"lat": 0.3334,
+"lon": 6.73332,
+"iso": "ST"
+},
+{
+"name": "Sénégal",
+"capital": "Dakar",
+"lat": 14.71778,
+"lon": -17.47508,
+"iso": "SN"
+},
+{
+"name": "Serbie",
+"capital": "Belgrade",
+"lat": 44.82059,
+"lon": 20.46605,
+"iso": "RS"
+},
+{
+"name": "Seychelles",
+"capital": "Victoria",
+"lat": -4.61663,
+"lon": 55.44999,
+"iso": "SC"
+},
+{
+"name": "Sierra Leone",
+"capital": "Freetown",
+"lat": 8.47196,
+"lon": -13.23616,
+"iso": "SL"
+},
+{
+"name": "Singapour",
+"capital": "Singapour",
+"lat": 1.29498,
+"lon": 103.85388,
+"iso": "SG"
+},
+{
+"name": "Slovaquie",
+"capital": "Bratislava",
+"lat": 48.15002,
+"lon": 17.11698,
+"iso": "SK"
+},
+{
+"name": "Slovénie",
+"capital": "Ljubljana",
+"lat": 46.05529,
+"lon": 14.51497,
+"iso": "SI"
+},
+{
+"name": "Somalie",
+"capital": "Mogadiscio",
+"lat": 2.06863,
+"lon": 45.36473,
+"iso": "SO"
+},
+{
+"name": "Somaliland",
+"capital": "Hargeisa",
+"lat": 9.56002,
+"lon": 44.06531,
+"iso": "SOL"
+},
+{
+"name": "Soudan",
+"capital": "Khartoum",
+"lat": 15.59002,
+"lon": 32.53223,
+"iso": "SD"
+},
+{
+"name": "Soudan du Sud",
+"capital": "Djouba",
+"lat": 4.82998,
+"lon": 31.58003,
+"iso": "SS"
+},
+{
+"name": "Sri Lanka",
+"capital": "Colombo",
+"lat": 6.93197,
+"lon": 79.85775,
+"iso": "LK"
+},
+{
+"name": "Suède",
+"capital": "Stockholm",
+"lat": 59.35271,
+"lon": 18.09539,
+"iso": "SE"
+},
+{
+"name": "Suisse",
+"capital": "Berne",
+"lat": 46.91668,
+"lon": 7.46698,
+"iso": "CH"
+},
+{
+"name": "Suriname",
+"capital": "Paramaribo",
+"lat": 5.83503,
+"lon": -55.16703,
+"iso": "SR"
+},
+{
+"name": "Syrie",
+"capital": "Damas",
+"lat": 33.50198,
+"lon": 36.29805,
+"iso": "SY"
+},
+{
+"name": "Tadjikistan",
+"capital": "Douchanbé",
+"lat": 38.56003,
+"lon": 68.77388,
+"iso": "TJ"
+},
+{
+"name": "Taïwan",
+"capital": "Taipei",
+"lat": 25.03583,
+"lon": 121.56833,
+"iso": "CN-TW"
+},
+{
+"name": "Tanzanie",
+"capital": "Dodoma",
+"lat": -6.163,
+"lon": 35.7516,
+"iso": "TZ"
+},
+{
+"name": "Tchad",
+"capital": "N'Djaména",
+"lat": 12.11504,
+"lon": 15.0472,
+"iso": "TD"
+},
+{
+"name": "Tchéquie",
+"capital": "Prague",
+"lat": 50.08528,
+"lon": 14.46403,
+"iso": "CZ"
+},
+{
+"name": "Thaïlande",
+"capital": "Bangkok",
+"lat": 13.75194,
+"lon": 100.5147,
+"iso": "TH"
+},
+{
+"name": "Timor oriental",
+"capital": "Dili",
+"lat": -8.55939,
+"lon": 125.57946,
+"iso": "TL"
+},
+{
+"name": "Togo",
+"capital": "Lomé",
+"lat": 6.13388,
+"lon": 1.22081,
+"iso": "TG"
+},
+{
+"name": "Tonga",
+"capital": "Nukuʻalofa",
+"lat": -21.13851,
+"lon": -175.22056,
+"iso": "TO"
+},
+{
+"name": "Trinité-et-Tobago",
+"capital": "Port-d'Espagne",
+"lat": 10.652,
+"lon": -61.51703,
+"iso": "TT"
+},
+{
+"name": "Tunisie",
+"capital": "Tunis",
+"lat": 36.80278,
+"lon": 10.17968,
+"iso": "TN"
+},
+{
+"name": "Turkménistan",
+"capital": "Achgabat",
+"lat": 37.95,
+"lon": 58.3833,
+"iso": "TM"
+},
+{
+"name": "Turquie",
+"capital": "Ankara",
+"lat": 39.92918,
+"lon": 32.86245,
+"iso": "TR"
+},
+{
+"name": "Tuvalu",
+"capital": "Funafuti",
+"lat": -8.51665,
+"lon": 179.21665,
+"iso": "TV"
+},
+{
+"name": "Ukraine",
+"capital": "Kyiv",
+"lat": 50.43531,
+"lon": 30.51468,
+"iso": "UA"
+},
+{
+"name": "Uruguay",
+"capital": "Montevideo",
+"lat": -34.8561,
+"lon": -56.173,
+"iso": "UY"
+},
+{
+"name": "Vanuatu",
+"capital": "Port-Vila",
+"lat": -17.73335,
+"lon": 168.31664,
+"iso": "VU"
+},
+{
+"name": "Venezuela",
+"capital": "Caracas",
+"lat": 10.50294,
+"lon": -66.91898,
+"iso": "VE"
+},
+{
+"name": "Viêt Nam",
+"capital": "Hanoï",
+"lat": 21.03527,
+"lon": 105.84807,
+"iso": "VN"
+},
+{
+"name": "Yémen",
+"capital": "Sanaa",
+"lat": 15.35668,
+"lon": 44.20465,
+"iso": "YE"
+},
+{
+"name": "Zambie",
+"capital": "Lusaka",
+"lat": -15.4147,
+"lon": 28.28138,
+"iso": "ZM"
+},
+{
+"name": "Zimbabwe",
+"capital": "Harare",
+"lat": -17.81584,
+"lon": 31.04276,
+"iso": "ZW"
+}
+]
