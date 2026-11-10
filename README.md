@@ -22,7 +22,9 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | Espace ou E / C ou A | monter / descendre |
 | Maj | vitesse ×8 |
 | Molette | multiplicateur de vitesse |
-| F | mode marche : gravité, yeux à 1,7 m, Espace = sauter, Maj = courir |
+| F | mode marche avec un personnage : gravité vers le centre de la Terre, Espace = sauter, Maj = courir |
+| V (en marche) | vue arrière (caméra derrière le personnage) / vue à la première personne |
+| Souris / molette (en marche) | tourner la caméra autour du personnage / la rapprocher ou l'éloigner |
 | 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
 | R | revenir à l'heure réelle |

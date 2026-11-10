@@ -11,7 +11,8 @@ namespace SteamEarth;
 /// Commandes : clic gauche = capturer la souris, Échap = libérer,
 /// ZQSD / WASD = avancer, Espace / E = monter, C / A = descendre,
 /// Maj = ×8, molette = multiplicateur de vitesse, 1–9 = lieux prédéfinis,
-/// F = marcher (gravité ; ZQSD pour marcher, Maj pour courir, Espace pour sauter).
+/// F = marcher avec le personnage (gravité ; ZQSD pour marcher, Maj pour courir, Espace pour sauter),
+/// V = vue arrière (troisième personne) / vue à la première personne, molette = distance de la caméra.
 /// </summary>
 public partial class FlyCamera : Camera3D
 {
@@ -19,7 +20,13 @@ public partial class FlyCamera : Camera3D
     public double Yaw;   // radians, 0 = nord, π/2 = est
     public double Pitch; // radians, + = vers le haut
     public double SpeedMultiplier = 1.0;
-    public bool Walk;    // mode marche : altitude fixée à 1,7 m au-dessus du sol
+    public bool Walk;    // mode marche : on contrôle le personnage (Body)
+    public Character Body;
+    public bool ThirdPerson = true;  // vue arrière (sinon : vue par les yeux du personnage)
+    public double CamDistance = 4.5; // distance caméra–personnage en vue arrière (m)
+
+    /// <summary>Position du joueur : le personnage en mode marche, sinon la caméra.</summary>
+    public Vec3d PlayerPos => Walk && Body != null ? Body.PosD : PosD;
 
     public double Altitude => PosD.Length() - Geo.Radius;
     public double GroundHeight { get; private set; }
@@ -34,6 +41,15 @@ public partial class FlyCamera : Camera3D
 
     public void Teleport(double lat, double lon, double heightAboveGround, double yawDeg, double pitchDeg)
     {
+        if (Walk && Body != null)
+        {
+            // En marche, on pose le personnage au sol et la caméra se place derrière lui
+            Body.PlaceOnGround(lat, lon, yawDeg * Math.PI / 180);
+            Yaw = Body.Yaw;
+            Pitch = ThirdPersonPitch;
+            FollowBody();
+            return;
+        }
         double ground = HeightProvider.SurfaceHeight(lat, lon);
         PosD = Geo.FromLatLon(lat, lon) * (Geo.Radius + ground + heightAboveGround);
         Yaw = yawDeg * Math.PI / 180;
@@ -46,13 +62,16 @@ public partial class FlyCamera : Camera3D
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
             if (mb.ButtonIndex == MouseButton.Left) Input.MouseMode = Input.MouseModeEnum.Captured;
-            if (mb.ButtonIndex == MouseButton.WheelUp) SpeedMultiplier *= 1.25;
-            if (mb.ButtonIndex == MouseButton.WheelDown) SpeedMultiplier /= 1.25;
+            bool zoom = Walk && Body != null && ThirdPerson; // en vue arrière, la molette rapproche / éloigne la caméra
+            if (mb.ButtonIndex == MouseButton.WheelUp) { if (zoom) CamDistance = Math.Max(1.5, CamDistance / 1.15); else SpeedMultiplier *= 1.25; }
+            if (mb.ButtonIndex == MouseButton.WheelDown) { if (zoom) CamDistance = Math.Min(40, CamDistance * 1.15); else SpeedMultiplier /= 1.25; }
         }
         else if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
         {
             Yaw += mm.Relative.X * 0.0025;
-            Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025, -1.55, 1.55);
+            // En vue arrière, on limite pour ne pas passer sous le personnage ni à la verticale
+            bool tp = Walk && Body != null && ThirdPerson;
+            Pitch = Math.Clamp(Pitch - mm.Relative.Y * 0.0025, tp ? -1.35 : -1.55, tp ? 0.7 : 1.55);
         }
         else if (e is InputEventKey k && k.Pressed && !k.Echo)
         {
@@ -60,6 +79,7 @@ public partial class FlyCamera : Camera3D
             {
                 case Key.Escape: Input.MouseMode = Input.MouseModeEnum.Visible; break;
                 case Key.F: SetWalk(!Walk); break;
+                case Key.V: ThirdPerson = !ThirdPerson; if (ThirdPerson) Pitch = Math.Clamp(Pitch, -1.35, 0.7); break;
                 case Key.Key1: Teleport(46.70, 7.80, 1500, 120, -12); break;   // Interlaken, vers l'Eiger
                 case Key.Key2: Teleport(46.03, 7.70, 600, 200, 5); break;     // Zermatt, vers le Cervin
                 case Key.Key3: Teleport(46.45, 6.55, 3000, 90, -10); break;    // Lac Léman
@@ -78,15 +98,16 @@ public partial class FlyCamera : Camera3D
     public const double EyeHeight = 1.7;
     public const double WalkSpeed = 4.0;    // m/s (petit trot)
     public const double SprintSpeed = 9.0;  // m/s avec Maj
-    public const double JumpSpeed = 4.5;    // m/s → saut d'environ 1 m
-    public const double Gravity = 9.81;
+    public const double ThirdPersonPitch = -0.3; // caméra légèrement au-dessus du personnage
+    public const double LookHeight = 1.55;       // la caméra vise la tête du personnage
     public bool Grounded { get; private set; }
-    public bool AutoForward;
-    public bool InputBlocked; // menu ouvert : les touches servent à l'interface // test automatique : avance seul (argument --autowalk)
-    double _verticalSpeed;
+    public bool AutoForward;  // test automatique : avance seul (argument --autowalk)
+    public bool InputBlocked; // menu ouvert : les touches servent à l'interface
 
     public override void _Process(double delta)
     {
+        if (Walk && Body != null) { ProcessWalk(delta); return; }
+
         var up = PosD.Normalized();
         Geo.ToLatLon(up, out double lat, out double lon);
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
@@ -100,30 +121,17 @@ public partial class FlyCamera : Camera3D
 
         var move = new Vec3d(0, 0, 0);
         bool keys = !InputBlocked;
-        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += Walk ? heading : forward;   // W = Z en AZERTY (touche physique)
-        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= Walk ? heading : forward;
+        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += forward;   // W = Z en AZERTY (touche physique)
+        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= forward;
         if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
         if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                      // A = Q en AZERTY
 
-        if (Walk)
-        {
-            // Déplacement horizontal, puis gravité vers le centre de la Terre
-            Speed = (shift ? SprintSpeed : WalkSpeed) * SpeedMultiplier;
-            if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
-            if (keys && Grounded && Input.IsPhysicalKeyPressed(Key.Space)) { _verticalSpeed = JumpSpeed; Grounded = false; }
-            _verticalSpeed -= Gravity * delta;
-            PosD += PosD.Normalized() * (_verticalSpeed * delta);
-        }
-        else
-        {
-            if (keys && (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E))) move += up;
-            if (keys && (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q))) move -= up;
-            double baseSpeed = Math.Clamp(agl, 5, 5_000_000);
-            if (shift) baseSpeed *= 8;
-            Speed = baseSpeed * SpeedMultiplier;
-            if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
-            _verticalSpeed = 0;
-        }
+        if (keys && (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E))) move += up;
+        if (keys && (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q))) move -= up;
+        double baseSpeed = Math.Clamp(agl, 5, 5_000_000);
+        if (shift) baseSpeed *= 8;
+        Speed = baseSpeed * SpeedMultiplier;
+        if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
 
         // Contrainte au sol : les yeux jamais sous 1,7 m au-dessus du relief
         up = PosD.Normalized();
@@ -131,37 +139,110 @@ public partial class FlyCamera : Camera3D
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
         double eye = GroundHeight + EyeHeight;
         double above = Altitude - eye;
-        // En marchant, on « colle » au sol dans les descentes douces plutôt que de décoller à chaque pas
-        bool snap = Walk && Grounded && _verticalSpeed <= 0 && above < Math.Max(0.3, Speed * delta * 1.5);
-        if (above < 0 || snap)
-        {
-            PosD = up * (Geo.Radius + eye);
-            if (Walk) { _verticalSpeed = 0; Grounded = true; }
-        }
-        else if (Walk && above > 0.05) Grounded = false;
-        if (!Walk) Grounded = above < 0.05;
+        if (above < 0) PosD = up * (Geo.Radius + eye);
+        Grounded = above < 0.05;
 
         UpdateTransform();
     }
 
-    /// <summary>Passe en marche (F) : on tombe jusqu'au sol si on est en l'air.</summary>
+    /// <summary>Mode marche : le clavier déplace le personnage, la caméra le suit (vue arrière) ou voit par ses yeux.</summary>
+    void ProcessWalk(double delta)
+    {
+        bool keys = !InputBlocked;
+        var up = Body.PosD.Normalized();
+        Geo.LocalFrame(up, out var east, out var north);
+        // Les directions suivent la caméra : Z avance « droit devant » à l'écran
+        var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
+        var right = heading.Cross(up).Normalized();
+        var move = new Vec3d(0, 0, 0);
+        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += heading;   // W = Z en AZERTY
+        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= heading;
+        if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
+        if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                     // A = Q en AZERTY
+        bool sprint = (keys && Input.IsPhysicalKeyPressed(Key.Shift)) || AutoForward;
+        bool jump = keys && Input.IsPhysicalKeyPressed(Key.Space);
+
+        Body.Step(move, sprint ? SprintSpeed : WalkSpeed, jump, delta);
+        Speed = Body.Speed;
+        Grounded = Body.Grounded;
+        FollowBody();
+    }
+
+    /// <summary>Place la caméra derrière le personnage (ou dans ses yeux) puis positionne le personnage à l'écran.</summary>
+    void FollowBody()
+    {
+        var up = Body.PosD.Normalized();
+        Vec3d? target = null;
+        if (ThirdPerson)
+        {
+            Geo.LocalFrame(up, out var east, out var north);
+            var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
+            var look = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
+            var head = Body.PosD + up * LookHeight;
+            // Si une pente se trouve entre le personnage et la caméra, on rapproche la caméra
+            double dist = CamDistance;
+            const int samples = 10;
+            for (int i = 1; i <= samples; i++)
+            {
+                double d = CamDistance * i / samples;
+                if (AboveGround(head - look * d) < 0.4) { dist = Math.Max(0.6, CamDistance * (i - 1) / samples); break; }
+            }
+            PosD = head - look * dist;
+            double above = AboveGround(PosD);
+            if (above < 0.4) PosD = PosD.Normalized() * (PosD.Length() + 0.4 - above);
+            target = head;
+        }
+        else PosD = Body.PosD + up * EyeHeight;
+        Body.Visible = ThirdPerson;
+
+        Geo.ToLatLon(PosD.Normalized(), out double lat, out double lon);
+        GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
+        UpdateTransform(target);
+        Body.Place(PosD, WorldRotation);
+    }
+
+    static double AboveGround(Vec3d p)
+    {
+        Geo.ToLatLon(p.Normalized(), out double lat, out double lon);
+        return p.Length() - Geo.Radius - HeightProvider.SurfaceHeight(lat, lon);
+    }
+
+    /// <summary>
+    /// Passe en marche (F) : le personnage apparaît sous la caméra. Proche du sol, il tombe depuis la caméra ;
+    /// plus haut, il est posé directement au sol (pas de chute de plusieurs kilomètres).
+    /// En quittant la marche, on reprend le vol depuis la position actuelle de la caméra.
+    /// </summary>
     public void SetWalk(bool walk)
     {
         Walk = walk;
-        _verticalSpeed = 0;
-        Grounded = false;
+        if (Body == null) return;
+        Body.Visible = false;
+        if (!walk) { Speed = 0; return; }
+        var up = PosD.Normalized();
+        Geo.ToLatLon(up, out double lat, out double lon);
+        double agl = Altitude - HeightProvider.SurfaceHeight(lat, lon);
+        if (agl > 30) Body.PlaceOnGround(lat, lon, Yaw);
+        else Body.PlaceAt(up * (PosD.Length() - EyeHeight), Yaw);
+        Pitch = ThirdPerson ? ThirdPersonPitch : 0;
+        FollowBody();
     }
 
     /// <summary>Rotation planète → Godot : est → +X, haut → +Y, nord → −Z.</summary>
     public Basis WorldRotation { get; private set; } = Basis.Identity;
 
-    void UpdateTransform()
+    /// <param name="lookAt">point visé (repère planète) ; sinon, la direction donnée par le cap et l'inclinaison.</param>
+    void UpdateTransform(Vec3d? lookAt = null)
     {
         var up = PosD.Normalized();
         Geo.LocalFrame(up, out var east, out var north);
         WorldRotation = new Basis(east.ToVector3(), up.ToVector3(), (-north).ToVector3()).Transposed();
         // Dans le repère Godot, la caméra ne fait que tourner autour de la verticale locale
         var fwd = new Vector3((float)(Math.Sin(Yaw) * Math.Cos(Pitch)), (float)Math.Sin(Pitch), (float)(-Math.Cos(Yaw) * Math.Cos(Pitch)));
+        if (lookAt is Vec3d target)
+        {
+            var toTarget = WorldRotation * (target - PosD).ToVector3();
+            if (toTarget.Length() > 0.01 && Math.Abs(toTarget.Normalized().Y) < 0.995) fwd = toTarget.Normalized();
+        }
         Transform = new Transform3D(Basis.LookingAt(fwd, Vector3.Up), Vector3.Zero);
 
         // Plans de découpe adaptés à l'altitude (évite un rapport far/near démesuré)
