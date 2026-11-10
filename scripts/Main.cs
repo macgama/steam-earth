@@ -27,6 +27,8 @@ public partial class Main : Node3D
     PlacesLayer _places;
     BuildingsLayer _buildings;
     StartMenu _start;
+    VehicleManager _vehicles;
+    string _spawnVehicle;
     GraphicsMenu _graphicsMenu;
     TransitLayer _transit;
     StreetNamesLayer _streets;
@@ -112,6 +114,8 @@ public partial class Main : Node3D
         _start = new StartMenu { Name = "StartMenu", Camera = _camera, Buildings = _buildings };
         AddChild(_start);
         _buildings.Start = _start;
+        _vehicles = new VehicleManager { Name = "Vehicles", Camera = _camera, Weather = _weather, Atmosphere = _atmosphere };
+        AddChild(_vehicles);
         _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
 
         var layer = new CanvasLayer();
@@ -145,6 +149,8 @@ public partial class Main : Node3D
             if (a.StartsWith("--view=")) view = int.Parse(a.Substring(7));
             if (a.StartsWith("--shot=")) _shotPath = a.Substring(7);
             if (a == "--walk") walk = true;
+            // --vehicle=car|bike|boat|plane : fait apparaître un véhicule et monte dedans (tests)
+            if (a.StartsWith("--vehicle=")) { _spawnVehicle = a.Substring(10); startMenu = false; }
             if (a.StartsWith("--ride=")) { _rideTest = a.Substring(7); _minFrames = 300; } // N,minutes après le départ
             if (a == "--board") _rideTest = "board";
             if (a == "--fp") _camera.ThirdPerson = false;           // marche à la première personne
@@ -171,6 +177,7 @@ public partial class Main : Node3D
         var key = new InputEventKey { PhysicalKeycode = Key.Key1 + (view - 1), Pressed = true };
         _camera._UnhandledInput(key);
         if (at != null) _camera.Teleport(at[0], at[1], at[2], at[3], at[4]);
+        if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--fly") >= 0) walk = false; // tests de véhicules : rester en vol libre (avion en vol)
         if (walk) _camera.SetWalk(true);
         if (pitch is double pd) _camera.Pitch = pd * Math.PI / 180; // inclinaison de la caméra (tests)
         if (_gotoCountry != null)
@@ -194,6 +201,12 @@ public partial class Main : Node3D
         _ride.OpenBoard();
     }
 
+    void SpawnTestVehicle()
+    {
+        var kind = _spawnVehicle switch { "bike" => VehicleKind.Bike, "boat" => VehicleKind.Boat, "plane" => VehicleKind.Plane, _ => VehicleKind.Car };
+        _vehicles.Spawn(kind);
+    }
+
     public override void _Process(double delta)
     {
         _frames++;
@@ -202,7 +215,8 @@ public partial class Main : Node3D
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
-        double ground = _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
+        double ground = _camera.Vehicle != null ? Vehicle.Ground(_camera.Vehicle.PosD, out _)
+            : _camera.Walk && _camera.Body != null ? _camera.Body.GroundHeight : _camera.GroundHeight;
         var w = _atmosphere.Current;
         var utc = _atmosphere.GameUtc;
         Geo.ToLatLon(_camera.PosD.Normalized(), out double camLat, out double camLon);
@@ -221,17 +235,23 @@ public partial class Main : Node3D
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Océan : {_ocean.Status}{(_ocean.Underwater ? "   [SOUS L'EAU]" : "")}\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
+            (_camera.Vehicle != null ? _camera.Vehicle.Hud() + "\n" : "") +
             $"FPS {Engine.GetFramesPerSecond()}   graphismes : {GraphicsQuality.Name(GraphicsQuality.Level)} (O pour changer)\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre  O graphismes";
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre  O graphismes  G véhicules (E monter / descendre)";
 
         if (_shotPath != null)
         {
             _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
             if (_walkTest > 0 && ((_frames > _minFrames && _idleFrames > 20) || _camera.AutoForward))
             {
-                if (!_camera.AutoForward) { _camera.SetWalk(true); _camera.AutoForward = true; }
+                if (!_camera.AutoForward)
+                {
+                    if (_spawnVehicle != null) { SpawnTestVehicle(); _spawnVehicle = null; } // véhicule de test : une fois le monde chargé (eau, relief fin)
+                    else if (_camera.Vehicle == null) _camera.SetWalk(true);
+                    _camera.AutoForward = true;
+                }
                 _walkTest--;
-                if (_walkTest % 10 == 0) GD.Print($"[Test] marche : {lat:F6} {lon:F6} alt {alt:F1} sol {ground:F1} obstacles {Obstacles.Count}");
+                if (_walkTest % 10 == 0) GD.Print($"[Test] {(_camera.Vehicle != null ? _camera.Vehicle.Hud() : "marche")} : {lat:F6} {lon:F6} alt {alt:F1} sol {ground:F1} obstacles {Obstacles.Count} FPS {Engine.GetFramesPerSecond()}");
                 return;
             }
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))

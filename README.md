@@ -24,6 +24,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | Molette | multiplicateur de vitesse |
 | F | mode marche avec un personnage : gravité vers le centre de la Terre, Espace = sauter, Maj = courir |
 | V (en marche) | vue arrière (caméra derrière le personnage) / vue à la première personne |
+| G | menu des véhicules : voiture, vélo, bateau, avion (il apparaît devant toi et tu montes dedans) |
+| E (à pied / en véhicule) | monter dans le véhicule le plus proche / en descendre (à l'arrêt) |
 | Souris / molette (en marche) | tourner la caméra autour du personnage / la rapprocher ou l'éloigner |
 | 1 à 9 | Interlaken, Zermatt, Léman, Europe vue de l'espace, Himalaya, New York, Tokyo, Sydney, Rio |
 | + / − (Maj : par ¼ h) | avancer / reculer l'heure (test) |
@@ -153,6 +155,31 @@ La carte est régénérée par le workflow « Lumières des villes » (`tools/ni
 - **Qualité** (`GraphicsQuality`) : Bas / Moyen / Élevé / Ultra → 16 / 32 / 48 / 64 vagues, maillage en mer de 5 m à 1,2 m
   (`WaterWaves`, `WaterMaxLevel`, voir docs/QUALITE_GRAPHIQUE.md). Pas de réflexions en espace écran : le ciel est reflété
   par la carte d'environnement, donc ça marche aussi en mode Compatibilité.
+
+## Véhicules : voiture, vélo, bateau, avion
+
+| Voiture près d'Interlaken | Vélo sur la Höhematte | Bateau sur le lac de Thoune (61 km/h) | Avion à 860 m au-dessus du lac |
+|---|---|---|---|
+| ![](docs/voiture.jpg) | ![](docs/velo.jpg) | ![](docs/bateau.jpg) | ![](docs/avion.jpg) |
+
+Touche **G** : on choisit un véhicule, il apparaît devant le personnage et on monte dedans. **E** pour descendre
+(à l'arrêt) ou remonter dans un véhicule garé à côté. Jusqu'à 8 véhicules restent garés dans le monde ; on ne
+traverse pas une voiture garée. La molette rapproche ou éloigne la caméra, la souris tourne autour du véhicule
+(la caméra revient derrière au bout d'une seconde et demie).
+
+Tout se passe sur la Terre ronde : la gravité est dirigée vers le centre de la Terre, le cap est un vecteur tangent
+(on peut faire le tour du monde, y compris par les pôles), positions en double précision comme le reste du monde.
+
+| Véhicule | Commandes | Physique (`scripts/Vehicles/`) |
+|---|---|---|
+| Voiture | Z accélérer, S freiner / reculer, Q/D tourner, Espace frein à main | `GroundVehicle.cs` : 1 300 kg, 90 kW (force limitée à bas régime, puissance ensuite), pente réelle, roulement, traînée de l'air avec le **vent réel** de face ou de dos, freins ~0,85 g. Virage limité par l'adhérence (sous-virage au-delà). La caisse suit la pente sous les 4 roues ; elle décolle sur une bosse si le relief descend plus vite que la gravité. Dans l'eau, le moteur se noie. |
+| Vélo | Z pédaler (Maj : en danseuse), S freiner, Q/D tourner | Même modèle, à la force des jambes : 250 W (700 W avec Maj), ~30 km/h sur le plat, on ralentit fort en montée et on file en descente. Le vélo penche dans les virages (angle = atan(v²/(R·g))). |
+| Bateau | Z avant, S arrière, Q/D gouvernail | `Boat.cs` : 1 400 kg, 9 kN de poussée, ~65 km/h. Le gouvernail n'agit qu'avec de l'eau qui le traverse (vitesse ou souffle de l'hélice). Flottaison = ressort amorti vers la surface de l'eau ; la coque prend la pente des vagues, se cabre en déjaugeant, gîte dans les virages, dérive sous le vent, s'échoue sur la rive. Il apparaît sur le lac, la rivière ou la mer la plus proche (≤ 500 m). |
+| Avion | Maj/Ctrl gaz, S cabrer, Z piquer, Q/D roulis (au sol : diriger), ←/→ palonnier, Espace freins | `Plane.cs` : avion de tourisme à aile haute (1 100 kg, 16 m² d'aile, 180 ch). Portance et traînée à partir de la vitesse **par rapport à l'air** = vitesse sol − **vent réel GFS** à l'altitude de l'avion (on « crabe » par vent de travers, on décolle plus court face au vent). Densité de l'air qui baisse avec l'altitude, décrochage vers 15° d'incidence (alarme), gouvernes d'autant plus efficaces que la pression dynamique est forte. Décollage vers 95–110 km/h. Atterrissage trop dur (> 4,5 m/s), trop incliné ou sur l'eau = crash. Si on vole en caméra libre, l'avion apparaît directement en vol. |
+
+La surface de l'eau vient de `Vehicles/WaterSurface.cs` : niveau des lacs et de la mer d'après le relief, plus
+`WaterSurface.Waves` (en mer seulement) : `Ocean.HeightAt`, la même houle que celle affichée, s'y branche tout seul ;
+le bateau monte et descend exactement avec les vagues réelles (NOAA GFS-Wave).
 
 ## Météo et heure réelles
 

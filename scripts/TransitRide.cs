@@ -238,7 +238,7 @@ public partial class TransitRide : Node3D, IRide
 
     void Board()
     {
-        if (Camera.Walk) Camera.SetWalk(false);
+        if (Camera.Walk || Camera.Vehicle != null) Camera.SetWalk(false); // on laisse sa voiture ou son vélo à l'arrêt
         Camera.Ride = this;
         Camera.Yaw = VehicleYaw(NowMin()) + Math.PI * 0.15;
         Camera.Pitch = -0.25;
