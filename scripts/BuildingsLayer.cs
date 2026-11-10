@@ -27,6 +27,7 @@ public partial class BuildingsLayer : Node3D
     public PlacesLayer Places;
     public PoliticalLayer Political;
     public CountryMenu Menu;
+    public StartMenu Start;
     public float Night;                  // 0 = jour, 1 = nuit (fenêtres éclairées)
 
     public const string Attribution = "bâtiments : OSM, Microsoft, Google Open Buildings (CC BY 4.0), USGS";
@@ -34,7 +35,7 @@ public partial class BuildingsLayer : Node3D
     const double ShowDistance = 40_000, LoadDistance = 60_000;
 
     /// <summary>Localité qu'on peut construire (étiquette affichée par une autre couche).</summary>
-    public readonly record struct Target(string Name, double Lat, double Lon, double Radius, Label3D Label);
+    public readonly record struct Target(string Name, double Lat, double Lon, double Radius, double MaxRadius, Label3D Label);
 
     public sealed class City
     {
@@ -42,6 +43,8 @@ public partial class BuildingsLayer : Node3D
         public double Lat { get; set; }
         public double Lon { get; set; }
         public double Radius { get; set; }
+        /// <summary>Taille finale : la zone construite s'agrandit jusqu'ici quand le joueur s'approche de son bord.</summary>
+        public double MaxRadius { get; set; }
         internal Vec3d Dir;
         internal int Buildings, TilesTotal, TilesDone;
     }
@@ -58,6 +61,7 @@ public partial class BuildingsLayer : Node3D
         public double LastBuild;
         public readonly List<City> Cities = new();
         public readonly Dictionary<City, int> Counts = new();
+        public readonly Dictionary<City, double> Radii = new();
     }
 
     readonly List<City> _cities = new();
@@ -129,6 +133,17 @@ public partial class BuildingsLayer : Node3D
         _ => 500,
     };
 
+    /// <summary>Taille jusqu'à laquelle une grande ville s'agrandit au fur et à mesure (les petites ne grandissent pas).</summary>
+    public static double MaxRadiusFor(string cls, double population) => cls switch
+    {
+        "megacity" => 30_000,
+        "city" => Math.Clamp(RadiusFor(cls, population) * 3, 6_000, 20_000),
+        "capital" => 15_000,
+        _ => RadiusFor(cls, population),
+    };
+
+    const double GrowStep = 1_500, GrowMargin = 1_500;
+
     City Find(Target t)
     {
         var d = Geo.FromLatLon(t.Lat, t.Lon);
@@ -137,17 +152,18 @@ public partial class BuildingsLayer : Node3D
     }
 
     /// <summary>Construit une localité (sans effet si elle l'est déjà).</summary>
-    public void Build(string name, double lat, double lon, double radius)
+    public void Build(string name, double lat, double lon, double radius, double maxRadius = 0)
     {
-        var t = new Target(name, lat, lon, radius, null);
+        var t = new Target(name, lat, lon, radius, maxRadius, null);
         if (Find(t) != null) return;
-        AddCity(new City { Name = name, Lat = lat, Lon = lon, Radius = radius }, true);
+        AddCity(new City { Name = name, Lat = lat, Lon = lon, Radius = radius, MaxRadius = maxRadius }, true);
         GD.Print($"[Buildings] construction de {name} ({lat:F4}, {lon:F4}, rayon {radius:N0} m)");
     }
 
     void AddCity(City c, bool save)
     {
         c.Dir = Geo.FromLatLon(c.Lat, c.Lon);
+        c.MaxRadius = Math.Max(c.MaxRadius, c.Radius);
         _cities.Add(c);
         _nextScan = 0;
         if (save) Save();
@@ -161,6 +177,7 @@ public partial class BuildingsLayer : Node3D
         {
             if (!t.Cities.Remove(c)) continue;
             t.Counts.Remove(c);
+            t.Radii.Remove(c);
             t.Stamp++;
             if (t.Cities.Count == 0) free.Add(key);
         }
@@ -235,10 +252,27 @@ public partial class BuildingsLayer : Node3D
                     _tiles.TryAdd((x, y), t);
                     wanted.Add((x, y));
                     if (!t.Cities.Contains(c)) { t.Cities.Add(c); t.Stamp++; }
+                    // ville agrandie : seules les tuiles qui débordent de l'ancien disque changent
+                    else if (t.Radii.TryGetValue(c, out double r) && r != c.Radius
+                             && (t.Center - c.Dir).Length() * Geo.Radius + t.HalfSize > r) t.Stamp++;
+                    t.Radii[c] = c.Radius;
                     c.TilesTotal++;
                     if (t.Ready && t.Counts.TryGetValue(c, out int n)) { c.TilesDone++; c.Buildings += n; }
                 }
         }
+
+        // Agrandissement au fur et à mesure : le joueur approche du bord d'une grande ville déjà construite
+        bool grown = false;
+        foreach (var c in _cities)
+        {
+            if (c.Radius >= c.MaxRadius || c.TilesTotal == 0 || c.TilesDone < c.TilesTotal) continue;
+            double d = (c.Dir - dir).Length() * Geo.Radius;
+            if (d < c.Radius - GrowMargin || d > c.Radius + GrowMargin) continue;
+            c.Radius = Math.Min(c.MaxRadius, Math.Max(c.Radius + GrowStep, d + 2 * GrowMargin));
+            GD.Print($"[Buildings] {c.Name} s'agrandit : rayon {c.Radius:N0} m (max {c.MaxRadius:N0})");
+            grown = true;
+        }
+        if (grown) { Save(); _nextScan = 0; }
 
         var remove = new List<(int, int)>();
         foreach (var (key, t) in _tiles) if (!wanted.Contains(key) && !t.Loading) remove.Add(key);
@@ -325,7 +359,7 @@ public partial class BuildingsLayer : Node3D
     void UpdateHover()
     {
         _hover = null;
-        if (Menu != null && Menu.IsOpen) { _prompt.Visible = false; return; }
+        if ((Menu != null && Menu.IsOpen) || (Start != null && Start.IsOpen)) { _prompt.Visible = false; return; }
         _targets.Clear();
         Places?.CollectTargets(_targets);
         Political?.CollectTargets(_targets);
@@ -349,7 +383,7 @@ public partial class BuildingsLayer : Node3D
         string key = free ? "clic" : "K";
         _promptText.Text = city == null ? $"{h.Name} — on construit ?  ({key})"
             : city.TilesDone < city.TilesTotal ? $"{h.Name} — construction… {city.TilesDone}/{city.TilesTotal}  ({city.Buildings:N0} bâtiments)"
-            : $"{h.Name} — {city.Buildings:N0} bâtiments  (Maj+{key} : démolir)";
+            : $"{h.Name} — {city.Buildings:N0} bâtiments, {city.Radius / 1000:0.#} km{(city.Radius < city.MaxRadius ? " (s'agrandit quand on s'approche du bord)" : "")}  (Maj+{key} : démolir)";
         _prompt.Visible = true;
         _prompt.ResetSize();
         _prompt.Position = at + new Vector2(-_prompt.Size.X / 2, 16);
@@ -365,7 +399,7 @@ public partial class BuildingsLayer : Node3D
         { act = true; shift = k.ShiftPressed; }
         if (!act) return;
         var city = Find(h);
-        if (city == null) Build(h.Name, h.Lat, h.Lon, h.Radius);
+        if (city == null) Build(h.Name, h.Lat, h.Lon, h.Radius, h.MaxRadius);
         else if (shift) Demolish(city);
         GetViewport().SetInputAsHandled(); // le clic ne capture pas la souris
     }
