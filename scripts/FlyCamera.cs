@@ -81,7 +81,8 @@ public partial class FlyCamera : Camera3D
     public const double JumpSpeed = 4.5;    // m/s → saut d'environ 1 m
     public const double Gravity = 9.81;
     public bool Grounded { get; private set; }
-    public bool AutoForward; // test automatique : avance seul (argument --autowalk)
+    public bool AutoForward;
+    public bool InputBlocked; // menu ouvert : les touches servent à l'interface // test automatique : avance seul (argument --autowalk)
     double _verticalSpeed;
 
     public override void _Process(double delta)
@@ -95,27 +96,28 @@ public partial class FlyCamera : Camera3D
         var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
         var forward = heading * Math.Cos(Pitch) + up * Math.Sin(Pitch);
         var right = heading.Cross(up).Normalized();
-        bool shift = Input.IsPhysicalKeyPressed(Key.Shift) || AutoForward;
+        bool shift = (!InputBlocked && Input.IsPhysicalKeyPressed(Key.Shift)) || AutoForward;
 
         var move = new Vec3d(0, 0, 0);
-        if (Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += Walk ? heading : forward;   // W = Z en AZERTY (touche physique)
-        if (Input.IsPhysicalKeyPressed(Key.S)) move -= Walk ? heading : forward;
-        if (Input.IsPhysicalKeyPressed(Key.D)) move += right;
-        if (Input.IsPhysicalKeyPressed(Key.A)) move -= right;                      // A = Q en AZERTY
+        bool keys = !InputBlocked;
+        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += Walk ? heading : forward;   // W = Z en AZERTY (touche physique)
+        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= Walk ? heading : forward;
+        if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
+        if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                      // A = Q en AZERTY
 
         if (Walk)
         {
             // Déplacement horizontal, puis gravité vers le centre de la Terre
             Speed = (shift ? SprintSpeed : WalkSpeed) * SpeedMultiplier;
             if (move.Length() > 0) PosD += move.Normalized() * (Speed * delta);
-            if (Grounded && Input.IsPhysicalKeyPressed(Key.Space)) { _verticalSpeed = JumpSpeed; Grounded = false; }
+            if (keys && Grounded && Input.IsPhysicalKeyPressed(Key.Space)) { _verticalSpeed = JumpSpeed; Grounded = false; }
             _verticalSpeed -= Gravity * delta;
             PosD += PosD.Normalized() * (_verticalSpeed * delta);
         }
         else
         {
-            if (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E)) move += up;
-            if (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q)) move -= up;
+            if (keys && (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E))) move += up;
+            if (keys && (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q))) move -= up;
             double baseSpeed = Math.Clamp(agl, 5, 5_000_000);
             if (shift) baseSpeed *= 8;
             Speed = baseSpeed * SpeedMultiplier;
