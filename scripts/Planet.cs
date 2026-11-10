@@ -15,10 +15,11 @@ namespace SteamEarth;
 public partial class Planet : Node3D
 {
     [Export] public int MaxLevel = 15;          // niveau 15 ≈ 10 m entre sommets (données 30 m)
-    [Export] public int HdMaxLevel = 19;        // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
-    [Export] public double SplitFactor = 1.6;   // plus grand = plus de détail, plus de chunks
     [Export] public int Resolution = 32;        // quads par côté de chunk
-    [Export] public int MaxConcurrentBuilds = 6;
+    // Réglés par le niveau de qualité graphique (GraphicsQuality) :
+    public int HdMaxLevel = 19;                 // zones haute définition (Suisse 0,5 m) : niveau 19 ≈ 0,6 m
+    public double SplitFactor = 1.6;            // plus grand = plus de détail, plus de chunks
+    public int MaxConcurrentBuilds = 6;
 
     public FlyCamera Camera;
     public int VisibleChunks { get; private set; }
@@ -60,6 +61,37 @@ public partial class Planet : Node3D
         };
         _roots = new QuadNode[6];
         for (int f = 0; f < 6; f++) _roots[f] = MakeNode(f, 0, -1, -1, 2);
+        ReadQuality(GraphicsQuality.Current);
+        GraphicsQuality.Changed += OnQualityChanged;
+    }
+
+    public override void _ExitTree() => GraphicsQuality.Changed -= OnQualityChanged;
+
+    void ReadQuality(QualityProfile q)
+    {
+        SplitFactor = q.TerrainSplitFactor;
+        HdMaxLevel = Math.Max(MaxLevel, q.TerrainHdMaxLevel);
+        MaxConcurrentBuilds = q.TerrainBuildThreads;
+    }
+
+    void OnQualityChanged(QualityProfile q, QualityProfile old)
+    {
+        ReadQuality(q);
+        // Végétation changée : les chunks visibles sont reconstruits peu à peu (même mécanisme que l'arrivée de données fines).
+        bool vegetation = q.VegetationDensity != old.VegetationDensity || q.VegetationMaxSpacing != old.VegetationMaxSpacing;
+        var terrainShadow = GraphicsQuality.ShadowFor(ShadowCaster.Terrain);
+        var treeShadow = GraphicsQuality.ShadowFor(ShadowCaster.Trees);
+        void Walk(QuadNode n)
+        {
+            if (n.Mesh != null)
+            {
+                n.Mesh.CastShadow = terrainShadow;
+                foreach (var c in n.Mesh.GetChildren()) if (c is MultiMeshInstance3D mm) mm.CastShadow = treeShadow;
+                if (vegetation && n.Ready) { n.Incomplete = true; n.BuiltVersion = -1; }
+            }
+            if (n.Children != null) foreach (var c in n.Children) Walk(c);
+        }
+        foreach (var r in _roots) Walk(r);
     }
 
     QuadNode MakeNode(int face, int level, double u0, double v0, double size, double meanHeight = 0)
@@ -100,7 +132,7 @@ public partial class Planet : Node3D
                 continue;
             }
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _material, Visible = false };
-            mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            mi.CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Terrain);
             AddChild(mi);
             Vegetation.Attach(mi, item.data);
             item.node.Mesh = mi;

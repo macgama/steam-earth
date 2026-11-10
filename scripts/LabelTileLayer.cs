@@ -103,7 +103,7 @@ public abstract partial class LabelTileLayer : Node3D
         var dir = Camera.PlayerPos.Normalized();
         Geo.ToLatLon(dir, out double lat, out double lon);
         double agl = Math.Max(0, Camera.Altitude - Camera.GroundHeight);
-        double radius = LoadRadius(agl);
+        double radius = LoadRadius(agl) * GraphicsQuality.Current.LabelsRadiusScale;
         var wanted = new HashSet<(int, int)>();
         int z = Zoom, n = 1 << z;
         if (radius > 0)

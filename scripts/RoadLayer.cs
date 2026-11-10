@@ -115,8 +115,9 @@ public partial class RoadLayer : Node3D
     {
         Geo.ToLatLon(player.Normalized(), out double lat, out double lon);
         var dir = player.Normalized();
-        double rDetail = agl < 6_000 ? Math.Clamp(2_500 + agl * 0.8, 2_500, 5_000) : 0;
-        double rOverview = agl < 80_000 ? Math.Clamp(20_000 + agl * 1.5, 20_000, 60_000) : 0;
+        double scale = GraphicsQuality.Current.RoadsRadiusScale; // niveau de qualité graphique
+        double rDetail = agl < 6_000 ? Math.Clamp(2_500 + agl * 0.8, 2_500, 5_000) * scale : 0;
+        double rOverview = agl < 80_000 ? Math.Clamp(20_000 + agl * 1.5, 20_000, 60_000) * scale : 0;
 
         var wanted = new HashSet<(int, int, int)>();
         Want(DetailZoom, rDetail);
