@@ -25,6 +25,7 @@ public partial class Main : Node3D
     PlacesLayer _places;
     BuildingsLayer _buildings;
     StartMenu _start;
+    GraphicsMenu _graphicsMenu;
     TransitLayer _transit;
     StreetNamesLayer _streets;
     TransitRide _ride;
@@ -40,6 +41,7 @@ public partial class Main : Node3D
 
     public override void _Ready()
     {
+        GraphicsQuality.Init(); // niveau Bas/Moyen/Élevé/Ultra (détecté au premier lancement), avant les couches
         HeightProvider.Init();
         LandCover.Init();
         TimeZones.Init();
@@ -97,6 +99,9 @@ public partial class Main : Node3D
         AddChild(_menu);
         _buildings = new BuildingsLayer { Name = "Buildings", Camera = _camera, Planet = _planet, Places = _places, Political = _political, Menu = _menu };
         AddChild(_buildings);
+        AddChild(new GraphicsApplier { Name = "GraphicsApplier", Env = _environment, Sun = _sun });
+        _graphicsMenu = new GraphicsMenu { Name = "GraphicsMenu", Camera = _camera };
+        AddChild(_graphicsMenu);
         _start = new StartMenu { Name = "StartMenu", Camera = _camera, Buildings = _buildings };
         AddChild(_start);
         _buildings.Start = _start;
@@ -208,8 +213,8 @@ public partial class Main : Node3D
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
-            $"FPS {Engine.GetFramesPerSecond()}\n" +
-            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre";
+            $"FPS {Engine.GetFramesPerSecond()}   graphismes : {GraphicsQuality.Name(GraphicsQuality.Level)} (O pour changer)\n" +
+            "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre  O graphismes";
 
         if (_shotPath != null)
         {
