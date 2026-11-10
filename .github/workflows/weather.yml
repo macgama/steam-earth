@@ -1,0 +1,39 @@
+# Met à jour la météo réelle (NOAA GFS) toutes les 6 heures et la publie
+# dans la release « weather-latest », que le jeu télécharge au démarrage.
+name: Météo GFS
+
+on:
+  schedule:
+    # Les prévisions GFS de 00, 06, 12 et 18 h UTC sont complètes sur AWS ~4 h plus tard
+    - cron: "30 4,10,16,22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weather
+  cancel-in-progress: false
+
+jobs:
+  weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/weather
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy eccodes
+      - run: python tools/weather/build_weather.py weather.bin.gz
+      - name: Publier dans la release weather-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view weather-latest >/dev/null 2>&1 || \
+            gh release create weather-latest --title "Météo (mise à jour automatique)" \
+              --notes "Prévisions NOAA GFS 1°, régénérées toutes les 6 h par le workflow Météo GFS. Ne pas supprimer : le jeu télécharge weather.bin.gz depuis cette release." \
+              --latest=false
+          gh release upload weather-latest weather.bin.gz --clobber
