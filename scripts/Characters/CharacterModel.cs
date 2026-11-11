@@ -19,6 +19,7 @@ public struct CharacterMotion
     public double LookPitch;      // radians, + = regarde vers le haut (tête et cou suivent)
     public double Pedal;          // vélo : angle du pédalier (radians)
     public double Lean;           // vélo, virages : inclinaison du buste (radians)
+    public string Idle;           // animation à l'arrêt à la place de « Idle » (passants : « Idle_Talking », « Idle_TalkingPhone »…)
 }
 
 /// <summary>
@@ -407,7 +408,7 @@ public partial class CharacterModel : Node3D
             else if (!m.Grounded && _airTime > 0.12) Play(m.VerticalSpeed > 0.5 && _airTime < 0.35 ? "Jump_Start" : "Jump", 0.15f);
             else if (_landTimer > 0) { }
             else if (m.Crouching) { if (s > 0.2f) Play("Crouch_Fwd", 0.2f, Math.Clamp(s / CrouchAnimSpeed, 0.5f, 2f)); else Play("Crouch_Idle", 0.25f); }
-            else if (s < 0.15f) Play("Idle", 0.25f);
+            else if (s < 0.15f) Play(m.Idle != null && _player.HasAnimation(m.Idle) ? m.Idle : "Idle", 0.3f);
             else if (s < 2.4f) Play("Walk", 0.2f, Math.Clamp(s / WalkAnimSpeed, 0.5f, 1.8f));
             else if (s < 6.0f) Play("Jog_Fwd", 0.2f, Math.Clamp(s / JogAnimSpeed, 0.7f, 1.6f));
             else Play("Sprint", 0.2f, Math.Clamp(s / SprintAnimSpeed, 0.8f, 1.6f));

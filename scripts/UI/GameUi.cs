@@ -191,6 +191,7 @@ public partial class GameUi : CanvasLayer
             "Villes et pays : Natural Earth ; aéroports : OurAirports",
             Timetable.Attribution,
             "Météo et houle : NOAA GFS / WAVEWATCH III",
+            "Habitants : STATPOP 2025 © Office fédéral de la statistique (OFS) ; communes : swissBOUNDARIES3D © swisstopo",
         })
         {
             var l = UiTheme.Dim("• " + line, 15);

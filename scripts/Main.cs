@@ -39,6 +39,8 @@ public partial class Main : Node3D
     TransitLayer _transit;
     StreetNamesLayer _streets;
     TransitRide _ride;
+    Population.PopulationLayer _population;
+    bool _talkTest;
     string _rideTest;
     CountryMenu _menu;
     string _gotoCountry;
@@ -131,6 +133,9 @@ public partial class Main : Node3D
         _buildings.Start = _start;
         _vehicles = new VehicleManager { Name = "Vehicles", Camera = _camera, Weather = _weather, Atmosphere = _atmosphere, ProcessMode = ProcessModeEnum.Pausable };
         AddChild(_vehicles);
+        // Passants : habitants réels de chaque hectare suisse (STATPOP), autour du joueur
+        _population = new Population.PopulationLayer { Name = "Population", Camera = _camera, Atmosphere = _atmosphere };
+        AddChild(_population);
         _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
 
         _menu.ShowButton = false; // Tab, ou le menu pause
@@ -176,6 +181,7 @@ public partial class Main : Node3D
             if (a.StartsWith("--enter=")) { _enterTest = a.Substring(8); walk = true; }
             if (a == "--stairs") _stairsTest = true;
             if (a == "--clear") _atmosphere.ClearSky = true; // tests : sans nuages
+            if (a == "--talk") _talkTest = true; // tests : fiche du passant le plus proche avant la capture
             if (a.StartsWith("--at="))
             {
                 var p = Array.ConvertAll(a.Substring(5).Split(','), x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture));
@@ -273,7 +279,7 @@ public partial class Main : Node3D
         if (_shotPath != null)
         {
             if (_enterTest != null && EnterTest()) return;
-            _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
+            _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _population.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
             if (_showroom != null && _frames > _minFrames && _idleFrames > 20)
             {
                 _vehicles.Showroom(_showroom);
@@ -297,6 +303,8 @@ public partial class Main : Node3D
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))
             {
                 _camera.AutoForward = false;
+                if (_talkTest) { _talkTest = false; _population.TalkToNearest(); _minFrames = _frames + 5; return; }
+                GD.Print("[Population] " + _population.Describe().Replace("\n", "\n[Population] "));
                 var img = GetViewport().GetTexture().GetImage();
                 img.SavePng(_shotPath);
                 GD.Print($"[Main] capture enregistrée : {_shotPath} (après {_frames} images)");
@@ -330,6 +338,7 @@ public partial class Main : Node3D
             $"Océan : {_ocean.Status}{(_ocean.Underwater ? "   [SOUS L'EAU]" : "")}\n" +
             $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}\n" +
             $"Bâtiments : {_buildings.Status} ({_interiors.Status})\n" +
+            $"Passants : {_population.Status}\n" +
             $"Arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}" +
             (_camera.Vehicle != null ? "\n" + _camera.Vehicle.Hud() : "");
     }

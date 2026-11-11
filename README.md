@@ -36,6 +36,7 @@ avec une boussole en haut.
 | F | mode marche avec un personnage : gravité vers le centre de la Terre, Espace = sauter, Maj = courir, X = marcher tranquillement, C = s'accroupir ; il nage dans l'eau |
 | V (en marche) | vue arrière (caméra derrière le personnage) / vue à la première personne (on voit son corps) |
 | U | menu Personnage : qui on incarne, coiffure, tenue (voir `docs/PERSONNAGE.md`) |
+| I | Suisse : parler au passant le plus proche, voir son histoire (voir `docs/POPULATION.md`) |
 | G | menu des véhicules : 16 véhicules en 4 catégories (il apparaît devant toi et tu montes dedans) |
 | E (à pied / en véhicule) | monter dans le véhicule le plus proche / en descendre (à l'arrêt) |
 | Souris / molette (en marche) | tourner la caméra autour du personnage / la rapprocher ou l'éloigner |

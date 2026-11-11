@@ -23,6 +23,8 @@ public sealed class RoadMeshData
     public int Segments;
     /// <summary>Zoom 14 : couloirs le long des voies (non bloquants) qui retirent les arbres tombant sur la chaussée.</summary>
     public List<Obstacles.Shape> Clearings;
+    /// <summary>Zoom 14 : trottoirs et chemins où marchent les passants (<see cref="Population.Walkways"/>).</summary>
+    public List<Population.Walkway> Walks;
 }
 
 /// <summary>
@@ -161,7 +163,7 @@ public static class RoadBuilder
     public static RoadMeshData BuildDetailed(List<Mvt.Feature> segments, int z, int x, int y, double spacing,
         Func<int, int, List<Mvt.Feature>> neighbours = null)
     {
-        var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion, Clearings = new List<Obstacles.Shape>() };
+        var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion, Clearings = new List<Obstacles.Shape>(), Walks = new List<Population.Walkway>() };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
         var q = GraphicsQuality.Current;
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color>(); var idx = new List<int>();
@@ -211,6 +213,15 @@ public static class RoadBuilder
                     Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
                     // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
                     Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
+                    // passants : bord des rues (pas sur les autoroutes ni les voies ferrées), milieu des chemins
+                    if (!style.Rail && style.Priority < 6 && run.Count >= 2)
+                    {
+                        string cls = f.Str("class");
+                        bool foot = style.Priority == 0 || cls is "pedestrian" or "living_street";
+                        var pts = new Vec3d[run.Count];
+                        for (int k = 0; k < run.Count; k++) pts[k] = run[k].dir * (Geo.Radius + run[k].h);
+                        data.Walks.Add(new Population.Walkway(pts, foot ? width * 0.22 : width / 2 + 0.9, foot));
+                    }
                     // Accotements en gravier des routes goudronnées (bord extérieur fondu dans l'herbe)
                     float shoulder = 0;
                     if (!style.Rail && style.Kind is Surface.MarkedAsphalt or Surface.Asphalt && q.RoadShoulder > 0)
