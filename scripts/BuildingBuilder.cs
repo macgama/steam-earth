@@ -18,6 +18,7 @@ public sealed class BuildingMeshData
     public List<BuildingInfo> Infos;     // bâtiments où l'on peut entrer (intérieurs générés près du joueur)
     public bool Incomplete;              // relief provisoire (téléchargement en cours) : à reconstruire
     public int DataVersion;
+    public bool Swiss;                   // construite avec les vrais bâtiments swissBUILDINGS3D
 }
 
 /// <summary>Bâtiment où l'on peut entrer : ce qu'il faut pour générer son intérieur (InteriorBuilder).</summary>
@@ -54,7 +55,7 @@ public sealed class BuildingInfo
 /// sinon une valeur selon la fonction et la surface. Les « building_part » (bâtiments 3D détaillés d'OSM)
 /// remplacent le contour de leur bâtiment. Les bâtiments où l'on peut entrer ont une porte côté rue.
 /// </summary>
-public static class BuildingBuilder
+public static partial class BuildingBuilder
 {
     public static readonly HashSet<string> Keys = new()
     {
@@ -87,6 +88,8 @@ public static class BuildingBuilder
         public List<double[]> Holes;
         public double X0, Y0, X1, Y1, Cx, Cy;
         public BuildingKinds.PlaceSummary Places;
+        public SwissBuildings3D.Building Swiss; // vrai bâtiment swisstopo (F = bâtiment OSM qui lui correspond, ou null)
+        public double Weight;                  // aire (unités de tuile²) du bâtiment OSM retenu pour un bâtiment swisstopo
     }
 
     sealed class Ctx
@@ -108,7 +111,7 @@ public static class BuildingBuilder
     static long Cell(int gx, int gy) => ((long)gx << 32) ^ (uint)gy;
 
     public static BuildingMeshData Build(byte[] mvt, byte[] places, byte[] landUse, int landZ, int landX, int landY,
-        int z, int tx, int ty, IReadOnlyList<Area> areas, double spacing)
+        int z, int tx, int ty, IReadOnlyList<Area> areas, double spacing, IReadOnlyList<SwissBuildings3D.Building> swiss = null)
     {
         var data = new BuildingMeshData { DataVersion = StreamedRaster.DataVersion, PerArea = new int[areas.Count], Infos = new() };
         PmTilesArchive.TileToLatLon(z, tx, ty, 0.5, 0.5, out double cla, out double clo);
@@ -120,9 +123,13 @@ public static class BuildingBuilder
             Detail = GraphicsQuality.Current.BuildingDetail,
         };
         ctx.M.AutoUv = true; // tours, minarets : textures en mètres
-        if (mvt != null && mvt.Length > 0)
+        bool hasSwiss = swiss != null && swiss.Count > 0;
+        data.Swiss = hasSwiss;
+        if ((mvt != null && mvt.Length > 0) || hasSwiss)
         {
-            var layers = Mvt.Decode(mvt, new HashSet<string> { "building", "building_part" }, Keys);
+            var layers = mvt != null && mvt.Length > 0
+                ? Mvt.Decode(mvt, new HashSet<string> { "building", "building_part" }, Keys)
+                : new Dictionary<string, List<Mvt.Feature>>();
             var withParts = new HashSet<string>();
             if (layers.TryGetValue("building_part", out var parts))
                 foreach (var p in parts) { var id = p.Str("building_id"); if (id != null) withParts.Add(id); }
@@ -142,6 +149,7 @@ public static class BuildingBuilder
                     if (f.Type != Mvt.GeomType.Polygon || f.Num("is_underground", 0) > 0) continue;
                     AddCands(f, true, true, cands, ctx);
                 }
+            if (hasSwiss) AddSwiss(swiss, cands, ctx); // les vrais bâtiments remplacent les contours OSM qu'ils recouvrent
             if (places != null && places.Length > 0) AssignPlaces(places, ctx);
             if (landUse != null && landUse.Length > 0)
             {
@@ -154,7 +162,12 @@ public static class BuildingBuilder
                         foreach (var ring in f.Parts) if (ring.Length >= 8) ctx.LandUse.Add((ring, c));
                     }
             }
-            foreach (var cd in cands) if (cd.Drawn) Emit(cd, areas, ctx);
+            foreach (var cd in cands)
+            {
+                if (!cd.Drawn) continue;
+                if (cd.Swiss != null) EmitSwiss(cd, areas, ctx);
+                else Emit(cd, areas, ctx);
+            }
         }
         var m = ctx.M;
         FrontFaces(m);
@@ -706,9 +719,9 @@ public static class BuildingBuilder
 
     static Color WallColor(Mvt.Feature f, BuildingKind kind, double seed)
     {
-        var s = f.Str("facade_color");
+        var s = f?.Str("facade_color");
         if (s != null) { var c = Color.FromString(s, new Color(-1, 0, 0)); if (c.R >= 0) return c; }
-        var mat = f.Str("facade_material");
+        var mat = f?.Str("facade_material");
         Color b = mat switch
         {
             "brick" => new Color(0.62f, 0.36f, 0.28f),
@@ -725,9 +738,9 @@ public static class BuildingBuilder
 
     static Color RoofColor(Mvt.Feature f, string shape, bool pitched, BuildingKind kind, double seed)
     {
-        var s = f.Str("roof_color");
+        var s = f?.Str("roof_color");
         if (s != null) { var c = Color.FromString(s, new Color(-1, 0, 0)); if (c.R >= 0) return c; }
-        var mat = f.Str("roof_material");
+        var mat = f?.Str("roof_material");
         Color b = mat switch
         {
             "roof_tiles" or "tile" => new Color(0.58f, 0.30f, 0.22f),

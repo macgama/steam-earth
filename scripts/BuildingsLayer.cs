@@ -83,6 +83,9 @@ public partial class BuildingsLayer : Node3D
         public bool Loading, Ready, Dead, Incomplete;
         public int BuiltVersion, Stamp, BuiltStamp;
         public byte[] Mvt, Places, Land;
+        // Suisse : vrais bâtiments swissBUILDINGS3D près du joueur (distance selon la qualité), génériques plus loin
+        public byte[] Swiss;                 // null = pas encore lu, vide = pas de données pour cette tuile
+        public bool InSwiss, WantSwiss, BuiltSwiss;
         public List<BuildingInfo> Infos;
         public Vec3d Origin;
         public MeshInstance3D Mesh;
@@ -269,6 +272,16 @@ public partial class BuildingsLayer : Node3D
             if (t.Ready && !t.Loading && t.Incomplete && t.BuiltVersion != StreamedRaster.DataVersion
                 && _clock - t.LastBuild > 3 && _building < MaxBuilds)
                 Build(t);
+            // Suisse : la tuile passe aux vrais bâtiments quand le joueur s'en approche (et revient aux génériques loin)
+            else if (t.Ready && !t.Loading && t.InSwiss && _building < MaxBuilds && _clock - t.LastBuild > 1)
+            {
+                double d = (t.Center - player.Normalized()).Length() * Geo.Radius - t.HalfSize;
+                double near = GraphicsQuality.Current.RealBuildingsDistance;
+                if (d < near) t.WantSwiss = true;
+                else if (d > near * 1.3 + 300) t.WantSwiss = false;
+                bool can = t.WantSwiss && (t.Swiss == null || t.Swiss.Length > 0);
+                if (can != t.BuiltSwiss) Build(t);
+            }
         }
         _mat.SetShaderParameter("night", Night);
         _mat.SetShaderParameter("lit_fraction", (float)LitFraction(LocalHour));
@@ -301,6 +314,8 @@ public partial class BuildingsLayer : Node3D
                         PmTilesArchive.TileToLatLon(Zoom, x, y, 0, 0, out double ala, out double alo);
                         var ctr = Geo.FromLatLon(cla, clo);
                         t = new Tile { X = x, Y = y, Center = ctr, HalfSize = (Geo.FromLatLon(ala, alo) - ctr).Length() * Geo.Radius };
+                        t.InSwiss = SwissBuildings3D.Covers(cla, clo);
+                        t.WantSwiss = t.InSwiss && (ctr - dir).Length() * Geo.Radius - t.HalfSize < GraphicsQuality.Current.RealBuildingsDistance;
                     }
                     if ((t.Center - c.Dir).Length() * Geo.Radius - t.HalfSize > c.Radius) continue;
                     _tiles.TryAdd((x, y), t);
@@ -354,6 +369,7 @@ public partial class BuildingsLayer : Node3D
         var cities = t.Cities.ToArray();
         var areas = Array.ConvertAll(cities, c => new BuildingBuilder.Area(c.Dir, c.Radius));
         int stamp = t.Stamp;
+        bool wantSwiss = t.InSwiss && t.WantSwiss;
         Task.Run(async () =>
         {
             BuildingMeshData data = null;
@@ -372,8 +388,19 @@ public partial class BuildingsLayer : Node3D
                     try { var ba = await baseArchive; t.Land = ba != null ? await ba.GetTileAsync(Zoom - 1, t.X >> 1, t.Y >> 1) ?? Array.Empty<byte>() : Array.Empty<byte>(); }
                     catch (Exception) { t.Land = Array.Empty<byte>(); }
                 }
+                // Suisse : vrais bâtiments swisstopo (archive pas encore publiée ou hors ligne : bâtiments génériques)
+                List<SwissBuildings3D.Building> swiss = null;
+                if (wantSwiss)
+                {
+                    if (t.Swiss == null)
+                    {
+                        try { var sa = await SwissBuildings3D.Archive; t.Swiss = sa != null ? await sa.GetTileAsync(Zoom, t.X, t.Y) ?? Array.Empty<byte>() : Array.Empty<byte>(); }
+                        catch (Exception) { t.Swiss = Array.Empty<byte>(); }
+                    }
+                    if (t.Swiss.Length > 0) swiss = SwissBuildings3D.Decode(t.Swiss);
+                }
                 // Relief à 4 m : précis à 1 m près, et léger à télécharger en Suisse (aperçu swissALTI3D)
-                data = BuildingBuilder.Build(t.Mvt, t.Places, t.Land, Zoom - 1, t.X >> 1, t.Y >> 1, Zoom, t.X, t.Y, areas, 4);
+                data = BuildingBuilder.Build(t.Mvt, t.Places, t.Land, Zoom - 1, t.X >> 1, t.Y >> 1, Zoom, t.X, t.Y, areas, 4, swiss);
             }
             catch (Exception e) { GD.PrintErr($"[Buildings] tuile {Zoom}/{t.X}/{t.Y} : {e.Message}"); }
             _done.Enqueue((t, data, cities, stamp));
@@ -390,6 +417,8 @@ public partial class BuildingsLayer : Node3D
         t.Incomplete = data.Incomplete;
         t.BuiltVersion = data.DataVersion;
         t.BuiltStamp = stamp;
+        t.BuiltSwiss = data.Swiss;
+        if (!data.Swiss && t.WantSwiss && t.Swiss != null && t.Swiss.Length > 0) t.Swiss = Array.Empty<byte>(); // illisible : génériques
         t.Counts.Clear();
         for (int i = 0; i < cities.Length; i++) if (t.Cities.Contains(cities[i])) t.Counts[cities[i]] = data.PerArea[i];
         ArrayMesh mesh = null;
@@ -415,6 +444,7 @@ public partial class BuildingsLayer : Node3D
         Obstacles.Set(t.Mesh, data.Footprints);
         t.Infos = data.Infos;
         InfosVersion++;
+        if (data.Swiss && !t.Ready) GD.Print($"[Buildings] tuile {Zoom}/{t.X}/{t.Y} : vrais bâtiments swisstopo ({data.PerArea.Sum()})");
         t.Ready = true;
     }
 
@@ -422,7 +452,7 @@ public partial class BuildingsLayer : Node3D
     {
         t.Dead = true;
         t.Mesh?.QueueFree();
-        t.Mesh = null; t.Mvt = null; t.Places = null; t.Land = null; t.Infos = null;
+        t.Mesh = null; t.Mvt = null; t.Places = null; t.Land = null; t.Swiss = null; t.Infos = null;
         InfosVersion++;
     }
 

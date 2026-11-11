@@ -1,0 +1,88 @@
+# Vrais bâtiments suisses : convertit swissBUILDINGS3D 3.0 (swisstopo, OGD, usage commercial autorisé avec « © swisstopo »)
+# en une archive PMTiles publiée dans la release « swissbuildings3d », que le jeu lit à la demande
+# (scripts/Data/SwissBuildings3D.cs). ~3 200 feuilles, ~15 Go à télécharger : réparti sur 16 tâches en parallèle.
+# À relancer quand swisstopo publie une nouvelle version (environ une fois par an) : modifier
+# tools/swissbuildings3d/VERSION ou lancer le workflow à la main (Actions → Bâtiments suisses → Run workflow).
+name: Bâtiments suisses (swissBUILDINGS3D)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - tools/swissbuildings3d/VERSION
+
+permissions:
+  contents: write
+
+concurrency:
+  group: swissbuildings3d
+  cancel-in-progress: false
+
+jobs:
+  list:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/swissbuildings3d
+      - run: |
+          /usr/bin/python3 -m pip install --user --break-system-packages numpy
+          /usr/bin/python3 tools/swissbuildings3d/build_tiles.py list sheets.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sheets
+          path: sheets.json
+          retention-days: 2
+
+  convert:
+    needs: list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/swissbuildings3d
+      - uses: actions/download-artifact@v4
+        with:
+          name: sheets
+      - run: |
+          sudo apt-get update && sudo apt-get install -y gdal-bin python3-gdal python3-numpy
+          /usr/bin/python3 -m pip install --user --break-system-packages shapely mapbox_earcut
+      - name: Convertir une part des feuilles
+        run: /usr/bin/python3 -W ignore tools/swissbuildings3d/build_tiles.py shard sheets.json ${{ matrix.part }} 16 part_${{ matrix.part }}.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part_${{ matrix.part }}
+          path: part_${{ matrix.part }}.bin
+          retention-days: 2
+          compression-level: 0
+
+  publish:
+    needs: convert
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/swissbuildings3d
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: part_*
+          merge-multiple: true
+          path: parts
+      - run: |
+          /usr/bin/python3 -m pip install --user --break-system-packages numpy pmtiles
+          ls -la parts
+          /usr/bin/python3 tools/swissbuildings3d/build_tiles.py merge parts/part_*.bin swissbuildings3d.pmtiles
+      - name: Publier dans la release swissbuildings3d
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view swissbuildings3d >/dev/null 2>&1 || \
+            gh release create swissbuildings3d --title "Bâtiments suisses (swissBUILDINGS3D)" --latest=false \
+              --notes "Bâtiments 3D de Suisse et du Liechtenstein convertis pour le jeu (scripts/Data/SwissBuildings3D.cs). Source : swissBUILDINGS3D 3.0 © swisstopo (OGD). Ne pas supprimer : le jeu lit ce fichier à la demande."
+          gh release upload swissbuildings3d swissbuildings3d.pmtiles --clobber
