@@ -337,7 +337,8 @@ void fragment() {
             float edge = max(band(xm, 0.35, 0.075, aa), band(xm, w - 0.35, 0.075, aa));
             float dash = 1.0 - smoothstep(0.30, 0.34, fract(ym / 9.0));   // trait 3 m, espace 6 m
             float mid = band(xm, w * 0.5, 0.07, aa) * dash;
-            col = mix(col, vec3(0.80), max(edge, mid) * mix(0.35, 1.0, detail));
+            // UV2.y : 0 aux carrefours (les lignes de deux voies ne s'y croisent pas)
+            col = mix(col, vec3(0.80), max(edge, mid) * mix(0.35, 1.0, detail) * clamp(UV2.y, 0.0, 1.0));
         }
     } else if (kind == 2) {
         // pavés / dalles : joints de 0,5 m
@@ -381,6 +382,14 @@ void fragment() {
         float tint = 0.75 + 0.4 * hash(floor(cell) + row * 13.0);
         col *= mix(1.0, tint * (0.85 + 0.3 * vnoise(sp * 8.0)) * (1.0 - 0.6 * joint), detail);
         rough = 0.95;
+    } else if (kind == 10) {
+        // béton de pont : panneaux de coffrage de 1,2 × 2,5 m, légères coulures
+        vec2 sp = vec2(ym, xm);
+        vec2 f = fract(sp / vec2(2.5, 1.2));
+        float joint = 1.0 - min(smoothstep(0.0, 0.015, min(f.x, 1.0 - f.x)), smoothstep(0.0, 0.03, min(f.y, 1.0 - f.y)));
+        float stain = vnoise(sp * vec2(0.8, 0.15)) * 0.5 + vnoise(sp * 3.0) * 0.5;
+        col *= mix(1.0, (0.85 + 0.25 * stain) * (1.0 - 0.25 * joint), detail);
+        rough = 0.9;
     } else {
         // rail : acier brillant sur le dessus, rouille sur les côtés
         float top = band(UV.x, 0.5, 0.22, fwidth(UV.x) + 0.001);
