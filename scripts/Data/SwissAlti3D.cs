@@ -42,8 +42,8 @@ public static class SwissAlti3D
         int n = 0;
         foreach (var y in _years) if (y != 0) n++;
         Tiles = n;
-        // 128×128 float = 64 Ko par bloc : 1 500 blocs ≈ 100 Mo de RAM au plus.
-        Raster = new StreamedRaster("swissalti3d", Locate, 1500, headBytes: 16384);
+        // 128×128 float = 64 Ko par bloc ; mémoire réglée ensuite selon la qualité (HeightProvider.ApplyQuality).
+        Raster = new StreamedRaster("swissalti3d", Locate, 160, headBytes: 16384);
         GD.Print($"[swissALTI3D] {Tiles} km² disponibles à 0,5 m");
     }
 

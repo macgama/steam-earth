@@ -35,11 +35,23 @@ public static class HeightProvider
     {
         string n = $"Copernicus_DSM_COG_10_{Hemi(lat, 'N', 'S', "00")}_00_{Hemi(lon, 'E', 'W', "000")}_00_DEM";
         return $"https://copernicus-dem-30m.s3.amazonaws.com/{n}/{n}.tif";
-    }, 96);
+    }, 256);
 
-    /// <summary>ESA WorldCover 2021 (10 m) : un COG par case de 3°, classe 80 = eau permanente.</summary>
+    /// <summary>ESA WorldCover 2021 (10 m) : un COG par case de 3°, classe 80 = eau permanente (un octet par pixel en mémoire).</summary>
     public static readonly StreamedRaster WorldCover = new("worldcover", 3, (lat, lon) =>
-        $"https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{Hemi(lat, 'N', 'S', "00")}{Hemi(lon, 'E', 'W', "000")}_Map.tif", 64);
+        $"https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{Hemi(lat, 'N', 'S', "00")}{Hemi(lon, 'E', 'W', "000")}_Map.tif", 96, classes: true);
+
+    /// <summary>
+    /// Mémoire des données de relief téléchargées, selon la qualité graphique : un cache trop petit pour tout ce qui est
+    /// visible faisait tourner les données en boucle (le sol restait sur sa version provisoire 30 m).
+    /// </summary>
+    public static void ApplyQuality(QualityProfile q)
+    {
+        long mb = q.TerrainDataMb * 1024L * 1024;
+        if (SwissAlti3D.Raster != null) SwissAlti3D.Raster.BudgetBytes = mb * 40 / 100;
+        Copernicus.BudgetBytes = mb * 42 / 100;
+        WorldCover.BudgetBytes = mb * 18 / 100;
+    }
 
     /// <summary>Au-delà de cet écart entre sommets, la carte mondiale de base suffit.</summary>
     public const double BaseOnlySpacing = 2000;
@@ -52,6 +64,13 @@ public static class HeightProvider
     }
 
     public static int LoadedTiles => Tiles.Count;
+
+    /// <summary>
+    /// Points (sur ce fil) pris sur une donnée de secours de moindre qualité : dans une zone HD, le 30 m (modèle de
+    /// surface, toits et arbres compris) au lieu de swissALTI3D. Remis à zéro par l'appelant (ChunkBuilder) ;
+    /// sert à ne jamais remplacer un maillage affiché par un moins bon.
+    /// </summary>
+    [ThreadStatic] public static int Fallbacks;
     public static int AvailableTiles => Available.Count;
 
     public static void Init()
@@ -70,6 +89,7 @@ public static class HeightProvider
         }
         GD.Print($"[HeightProvider] base {_bw}x{_bh}, {Available.Count} tuiles de détail disponibles");
         SwissAlti3D.Init();
+        ApplyQuality(GraphicsQuality.Current);
     }
 
     static int Key(int lat, int lon) => (lat + 90) * 360 + (lon + 180);
@@ -178,15 +198,20 @@ public static class HeightProvider
             if (hr == StreamedRaster.Result.Pending)
             {
                 pending = true;
+                // En attendant : un aperçu plus grossier du même relief (sol nu). Le 4 m est demandé aussi : un bloc
+                // couvre 512 m, il arrive vite et évite de retomber sur le 30 m.
                 for (int l = hl + 1; l <= 3 && hr != StreamedRaster.Result.Ok; l++)
-                    hr = SwissAlti3D.Raster.Sample(latDeg, lonDeg, l, true, false, out hv);
+                    hr = SwissAlti3D.Raster.Sample(latDeg, lonDeg, l, true, l == 3, out hv);
             }
             if (hr == StreamedRaster.Result.Ok)
             {
                 water = WaterAt(latDeg, lonDeg, spacing, hv, hb, false, ref pending, out cover);
                 return hv;
             }
-            // sinon (téléchargement en cours ou tuile absente) : Copernicus 30 m en attendant
+            // Sinon (téléchargement en cours ou tuile absente) : Copernicus 30 m en attendant. Attention : c'est un
+            // modèle de SURFACE (toits, arbres compris) : en ville il est plusieurs mètres au-dessus du vrai sol.
+            // Les chunks ainsi construits sont marqués provisoires et reconstruits dès que le 0,5 m arrive.
+            if (hr == StreamedRaster.Result.Pending) Fallbacks++;
         }
 
         // 1. Tuiles locales (incluses dans le jeu) : disponibles hors ligne, sans attente

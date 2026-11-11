@@ -23,7 +23,9 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Arbres : densité (`VegetationDensity`) | 40 % | 70 % | 100 % | 100 % |
 | Herbe et cailloux (`GrassDensity` / `GrassDistance`) | non | 35 % / 40 m | 70 % / 80 m | 100 % / 150 m |
 | Brins par touffe d'herbe (`GrassBlades`) | — | 9 | 13 | 18 |
-| Textures du sol (`GroundDetail`, 0–3) | 1 | 2 | 3 | 3 |
+| Textures du sol (`GroundDetail`, 0–4) : distance, échelles | 300 m, 1 | 800 m, 2 | 1,5 km, 2 | 2,5 km, 2 + nuances à grande échelle |
+| Sol des villes : jardins (herbe) et pavés/gravier en taches au lieu d'un gris uni | oui | oui | oui | oui |
+| Mémoire des données de relief (`TerrainDataMb` : swissALTI3D, Copernicus, WorldCover) | 384 Mo | 512 Mo | 768 Mo | 1 Go |
 | Bâtiments affichés jusqu'à | 10 km | 20 km | 40 km | 60 km |
 | Vrais bâtiments suisses swissBUILDINGS3D (`RealBuildingsDistance`), génériques au-delà | 1,5 km | 4 km | 10 km | 60 km |
 | Intérieurs des bâtiments (`InteriorRadius` / `InteriorMax`) | 25 m / 6 | 45 m / 12 | 80 m / 24 | 140 m / 40 |

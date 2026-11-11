@@ -26,6 +26,9 @@ public sealed record QualityProfile
     public int TerrainHdMaxLevel { get; init; }
     /// <summary>Chunks construits en parallèle (dépend aussi du nombre de cœurs du processeur).</summary>
     public int TerrainBuildThreads { get; init; }
+    /// <summary>Mémoire (Mo) des données de relief et de couverture des sols gardées en RAM (swissALTI3D, Copernicus,
+    /// WorldCover). Plus de détail affiché (Ultra) = plus de données à garder à la fois.</summary>
+    public int TerrainDataMb { get; init; }
 
     // ---- Végétation (Vegetation)
     /// <summary>Espacement max des sommets d'un chunk pour y poser des arbres : 11 ≈ ~700 m autour du joueur, 21 ≈ 1,5 km, 42 ≈ 3 km.</summary>
@@ -38,7 +41,8 @@ public sealed record QualityProfile
     public float GrassDistance { get; init; }
     /// <summary>Brins par touffe d'herbe (plus = herbe plus fine et fournie de près).</summary>
     public int GrassBlades { get; init; }
-    /// <summary>Textures du sol : 0 = couleurs seules, 1 = texture simple, 2 = détail + normal map, 3 = détail complet (mélanges, relief).</summary>
+    /// <summary>Textures du sol : 0 = couleurs seules, 1 = texture simple (300 m), 2 = deux échelles (800 m),
+    /// 3 = deux échelles (1,5 km), 4 = deux échelles (2,5 km) + nuances à grande échelle.</summary>
     public int GroundDetail { get; init; }
 
     // ---- Distances d'affichage
@@ -177,12 +181,13 @@ public static class GraphicsQuality
             TerrainSplitFactor = P(1.15, 1.35, 1.6, 2.0),
             TerrainHdMaxLevel = P(17, 18, 19, 19),
             TerrainBuildThreads = Math.Clamp(cores - 2, 2, P(3, 4, 6, 10)),
+            TerrainDataMb = P(384, 512, 768, 1024),
             VegetationMaxSpacing = P(11.0, 21.0, 21.0, 42.0),
             VegetationDensity = P(0.4f, 0.7f, 1f, 1f),
             GrassDensity = P(0f, 0.35f, 0.7f, 1f),
             GrassDistance = P(0f, 40f, 80f, 150f),
             GrassBlades = P(0, 9, 13, 18),
-            GroundDetail = P(1, 2, 3, 3),
+            GroundDetail = P(1, 2, 3, 4),
             DrawDistanceScale = P(0.5, 0.75, 1.0, 1.4),
             BuildingsShowDistance = P(10_000.0, 20_000.0, 40_000.0, 60_000.0),
             RealBuildingsDistance = P(1_500.0, 4_000.0, 10_000.0, 60_000.0),
