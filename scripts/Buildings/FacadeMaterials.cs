@@ -10,7 +10,7 @@ namespace SteamEarth;
 /// toits = (horizontale le long du pan, distance vers le bas de la pente) — voir <see cref="FacadeMaterials.SlopeUv"/>.
 /// Les mêmes conventions servent aux modèles 3D importés (swissBUILDINGS3D) : voir docs/MATERIAUX_BATIMENTS.md.
 /// </summary>
-public enum Surface : byte
+public enum FacadeSurface : byte
 {
     Plain = 0,
     // Murs
@@ -42,7 +42,7 @@ public enum Surface : byte
 public enum BalconyKind : byte { None, Wood, Metal }
 
 /// <summary>Aspect choisi pour un bâtiment : matières, couleurs, volets, balcons.</summary>
-public readonly record struct BuildingLook(Surface Wall, Surface Roof, bool Shutters, BalconyKind Balconies, Color WallColor, Color RoofColor)
+public readonly record struct BuildingLook(FacadeSurface Wall, FacadeSurface Roof, bool Shutters, BalconyKind Balconies, Color WallColor, Color RoofColor)
 {
     /// <summary>Code du mur pour <see cref="MeshAcc.Material"/> (avec le drapeau des volets).</summary>
     public byte WallCode => FacadeMaterials.Code(Wall, Shutters);
@@ -58,7 +58,7 @@ public static class FacadeMaterials
     /// <summary>Ajouté au code d'un mur d'habitation : fenêtres à volets.</summary>
     public const byte ShuttersFlag = 64;
 
-    public static byte Code(Surface s, bool shutters = false) => (byte)((byte)s | (shutters ? ShuttersFlag : 0));
+    public static byte Code(FacadeSurface s, bool shutters = false) => (byte)((byte)s | (shutters ? ShuttersFlag : 0));
 
     /// <summary>Couleur de sommet portant la matière (alpha codé).</summary>
     public static Color Encode(Color c, byte code) => new(c.R, c.G, c.B, 1f - code / 255f);
@@ -87,32 +87,32 @@ public static class FacadeMaterials
 
     static double Smooth(double a, double b, double x) { double t = Math.Clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
 
-    static Surface? FromOsmWall(string m) => m switch
+    static FacadeSurface? FromOsmWall(string m) => m switch
     {
         null => null,
-        "brick" => Surface.Brick,
-        "wood" or "timber" => Surface.Wood,
-        "stone" or "sandstone" or "granite" or "limestone" => Surface.Stone,
-        "concrete" => Surface.Concrete,
-        "metal" or "steel" => Surface.Metal,
-        "plaster" or "render" or "stucco" or "cement_block" => Surface.Render,
-        "timber_framing" or "half-timbered" => Surface.TimberFrame,
-        "glass" or "mirror" => Surface.Plain,
+        "brick" => FacadeSurface.Brick,
+        "wood" or "timber" => FacadeSurface.Wood,
+        "stone" or "sandstone" or "granite" or "limestone" => FacadeSurface.Stone,
+        "concrete" => FacadeSurface.Concrete,
+        "metal" or "steel" => FacadeSurface.Metal,
+        "plaster" or "render" or "stucco" or "cement_block" => FacadeSurface.Render,
+        "timber_framing" or "half-timbered" => FacadeSurface.TimberFrame,
+        "glass" or "mirror" => FacadeSurface.Plain,
         _ => null,
     };
 
-    static Surface? FromOsmRoof(string m) => m switch
+    static FacadeSurface? FromOsmRoof(string m) => m switch
     {
         null => null,
-        "roof_tiles" or "tile" or "tiles" or "clay" => Surface.RoofTiles,
-        "slate" or "eternit" or "fibre_cement" => Surface.RoofSlate,
-        "metal" or "metal_sheet" or "tin" or "zinc" or "steel" => Surface.RoofMetal,
-        "copper" => Surface.RoofCopper,
-        "wood" or "shingle" or "shingles" or "asphalt_shingle" => Surface.RoofShingles,
-        "grass" or "plants" or "green" => Surface.RoofGreen,
-        "stone" => Surface.RoofStone,
-        "gravel" or "concrete" or "tar_paper" or "asphalt" or "bitumen" or "pebbles" => Surface.RoofGravel,
-        "glass" => Surface.Plain,
+        "roof_tiles" or "tile" or "tiles" or "clay" => FacadeSurface.RoofTiles,
+        "slate" or "eternit" or "fibre_cement" => FacadeSurface.RoofSlate,
+        "metal" or "metal_sheet" or "tin" or "zinc" or "steel" => FacadeSurface.RoofMetal,
+        "copper" => FacadeSurface.RoofCopper,
+        "wood" or "shingle" or "shingles" or "asphalt_shingle" => FacadeSurface.RoofShingles,
+        "grass" or "plants" or "green" => FacadeSurface.RoofGreen,
+        "stone" => FacadeSurface.RoofStone,
+        "gravel" or "concrete" or "tar_paper" or "asphalt" or "bitumen" or "pebbles" => FacadeSurface.RoofGravel,
+        "glass" => FacadeSurface.Plain,
         _ => null,
     };
 
@@ -159,58 +159,58 @@ public static class FacadeMaterials
         bool small = footprint < 260 && height < 16;
 
         // ---- murs
-        Surface w;
+        FacadeSurface w;
         var osmW = FromOsmWall(facadeMaterial);
         if (osmW != null) w = osmW.Value;
-        else if (style is WindowStyle.Glass) w = Surface.Plain;
+        else if (style is WindowStyle.Glass) w = FacadeSurface.Plain;
         else w = kind switch
         {
-            BuildingKind.Church or BuildingKind.Chapel or BuildingKind.Cathedral => r < 0.55 ? Surface.Stone : Surface.Render,
-            BuildingKind.Mosque or BuildingKind.Temple or BuildingKind.Hospital or BuildingKind.Kindergarten => Surface.Render,
-            BuildingKind.TrainStation or BuildingKind.Museum or BuildingKind.Library => r < 0.45 ? Surface.Stone : Surface.Render,
-            BuildingKind.Civic => r < 0.35 ? Surface.Stone : r < 0.7 ? Surface.Render : Surface.Concrete,
-            BuildingKind.Office => r < 0.5 ? Surface.Concrete : Surface.Render,
-            BuildingKind.School or BuildingKind.University => region == Region.NorthWestEurope && r < 0.6 ? Surface.Brick : r < 0.6 ? Surface.Render : Surface.Concrete,
+            BuildingKind.Church or BuildingKind.Chapel or BuildingKind.Cathedral => r < 0.55 ? FacadeSurface.Stone : FacadeSurface.Render,
+            BuildingKind.Mosque or BuildingKind.Temple or BuildingKind.Hospital or BuildingKind.Kindergarten => FacadeSurface.Render,
+            BuildingKind.TrainStation or BuildingKind.Museum or BuildingKind.Library => r < 0.45 ? FacadeSurface.Stone : FacadeSurface.Render,
+            BuildingKind.Civic => r < 0.35 ? FacadeSurface.Stone : r < 0.7 ? FacadeSurface.Render : FacadeSurface.Concrete,
+            BuildingKind.Office => r < 0.5 ? FacadeSurface.Concrete : FacadeSurface.Render,
+            BuildingKind.School or BuildingKind.University => region == Region.NorthWestEurope && r < 0.6 ? FacadeSurface.Brick : r < 0.6 ? FacadeSurface.Render : FacadeSurface.Concrete,
             BuildingKind.Industrial or BuildingKind.Warehouse or BuildingKind.Supermarket or BuildingKind.SportsHall =>
-                r < 0.6 ? Surface.Metal : Surface.Concrete,
-            BuildingKind.Stadium or BuildingKind.Grandstand or BuildingKind.Garage or BuildingKind.Tank => Surface.Concrete,
-            BuildingKind.Shed => region is Region.NorthAmerica or Region.Scandinavia || r < 0.75 ? Surface.Wood : Surface.Concrete,
-            BuildingKind.FireStation => r < 0.5 ? Surface.Brick : Surface.Render,
+                r < 0.6 ? FacadeSurface.Metal : FacadeSurface.Concrete,
+            BuildingKind.Stadium or BuildingKind.Grandstand or BuildingKind.Garage or BuildingKind.Tank => FacadeSurface.Concrete,
+            BuildingKind.Shed => region is Region.NorthAmerica or Region.Scandinavia || r < 0.75 ? FacadeSurface.Wood : FacadeSurface.Concrete,
+            BuildingKind.FireStation => r < 0.5 ? FacadeSurface.Brick : FacadeSurface.Render,
             BuildingKind.Farm => region switch
             {
-                Region.Alps or Region.SwissLowland => r < 0.55 ? Surface.Chalet : r < 0.85 ? Surface.Wood : Surface.Render,
-                Region.Ticino => r < 0.6 ? Surface.Stone : Surface.Wood,
-                Region.NorthAmerica or Region.Scandinavia => Surface.Wood,
-                Region.NorthWestEurope => r < 0.6 ? Surface.Brick : Surface.Wood,
-                _ => r < 0.5 ? Surface.Stone : Surface.Render,
+                Region.Alps or Region.SwissLowland => r < 0.55 ? FacadeSurface.Chalet : r < 0.85 ? FacadeSurface.Wood : FacadeSurface.Render,
+                Region.Ticino => r < 0.6 ? FacadeSurface.Stone : FacadeSurface.Wood,
+                Region.NorthAmerica or Region.Scandinavia => FacadeSurface.Wood,
+                Region.NorthWestEurope => r < 0.6 ? FacadeSurface.Brick : FacadeSurface.Wood,
+                _ => r < 0.5 ? FacadeSurface.Stone : FacadeSurface.Render,
             },
             _ when housing => HousingWall(region, groundAlt, kind, small, levels, r, r2),
-            _ => Surface.Render,
+            _ => FacadeSurface.Render,
         };
 
         // ---- toit
-        Surface rf;
+        FacadeSurface rf;
         var osmR = FromOsmRoof(roofMaterial);
         if (osmR != null) rf = osmR.Value;
-        else if (!pitched) rf = kind is BuildingKind.Industrial or BuildingKind.Warehouse or BuildingKind.SportsHall && r2 < 0.5 ? Surface.RoofMetal
-            : kind is BuildingKind.Greenhouse ? Surface.Plain
-            : region is Region.SwissLowland or Region.Alps && r3 < 0.25 && footprint < 3000 ? Surface.RoofGreen : Surface.RoofGravel;
-        else if (kind is BuildingKind.Greenhouse) rf = Surface.Plain;
+        else if (!pitched) rf = kind is BuildingKind.Industrial or BuildingKind.Warehouse or BuildingKind.SportsHall && r2 < 0.5 ? FacadeSurface.RoofMetal
+            : kind is BuildingKind.Greenhouse ? FacadeSurface.Plain
+            : region is Region.SwissLowland or Region.Alps && r3 < 0.25 && footprint < 3000 ? FacadeSurface.RoofGreen : FacadeSurface.RoofGravel;
+        else if (kind is BuildingKind.Greenhouse) rf = FacadeSurface.Plain;
         else
         {
             // d'après la couleur déjà tirée (rouge = tuiles, gris = ardoise, vert = cuivre), puis la région
             bool reddish = roof.R > roof.B + 0.12f;
             bool green = roof.G > roof.R + 0.08f;
-            rf = green ? Surface.RoofCopper
+            rf = green ? FacadeSurface.RoofCopper
                 : region switch
                 {
-                    Region.Alps => w is Surface.Wood or Surface.Chalet
-                        ? (r2 < 0.40 ? Surface.RoofSlate : r2 < 0.62 ? Surface.RoofMetal : r2 < 0.80 ? Surface.RoofShingles : Surface.RoofTiles)
-                        : (reddish ? Surface.RoofTiles : r2 < 0.6 ? Surface.RoofSlate : Surface.RoofMetal),
-                    Region.Ticino => small && r2 < 0.55 ? Surface.RoofStone : reddish ? Surface.RoofTiles : Surface.RoofSlate,
-                    Region.NorthAmerica => kind is BuildingKind.Farm or BuildingKind.Shed && r2 < 0.5 ? Surface.RoofMetal : Surface.RoofShingles,
-                    Region.Scandinavia => reddish ? Surface.RoofTiles : r2 < 0.6 ? Surface.RoofMetal : Surface.RoofSlate,
-                    _ => kind is BuildingKind.Farm && r2 < 0.3 ? Surface.RoofMetal : reddish ? Surface.RoofTiles : Surface.RoofSlate,
+                    Region.Alps => w is FacadeSurface.Wood or FacadeSurface.Chalet
+                        ? (r2 < 0.40 ? FacadeSurface.RoofSlate : r2 < 0.62 ? FacadeSurface.RoofMetal : r2 < 0.80 ? FacadeSurface.RoofShingles : FacadeSurface.RoofTiles)
+                        : (reddish ? FacadeSurface.RoofTiles : r2 < 0.6 ? FacadeSurface.RoofSlate : FacadeSurface.RoofMetal),
+                    Region.Ticino => small && r2 < 0.55 ? FacadeSurface.RoofStone : reddish ? FacadeSurface.RoofTiles : FacadeSurface.RoofSlate,
+                    Region.NorthAmerica => kind is BuildingKind.Farm or BuildingKind.Shed && r2 < 0.5 ? FacadeSurface.RoofMetal : FacadeSurface.RoofShingles,
+                    Region.Scandinavia => reddish ? FacadeSurface.RoofTiles : r2 < 0.6 ? FacadeSurface.RoofMetal : FacadeSurface.RoofSlate,
+                    _ => kind is BuildingKind.Farm && r2 < 0.3 ? FacadeSurface.RoofMetal : reddish ? FacadeSurface.RoofTiles : FacadeSurface.RoofSlate,
                 };
         }
 
@@ -218,27 +218,27 @@ public static class FacadeMaterials
         if (!osmWallColor)
             wall = w switch
             {
-                Surface.Wood => kind is BuildingKind.Farm or BuildingKind.Shed ? Pick(BarnCols, seed, 4) : Pick(WoodCols, seed, 4),
-                Surface.Chalet => Pick(WoodCols, seed, 4),
-                Surface.Brick => Pick(BrickCols, seed, 4),
-                Surface.Stone => kind is BuildingKind.Church or BuildingKind.Chapel or BuildingKind.Cathedral ? wall : Pick(StoneCols, seed, 4),
-                Surface.Metal => Pick(MetalCols, seed, 4),
-                Surface.Siding => region == Region.Scandinavia ? Pick(ScandiCols, seed, 4) : Pick(SidingCols, seed, 4),
-                Surface.TimberFrame => Pick(RenderLight, seed, 4),
+                FacadeSurface.Wood => kind is BuildingKind.Farm or BuildingKind.Shed ? Pick(BarnCols, seed, 4) : Pick(WoodCols, seed, 4),
+                FacadeSurface.Chalet => Pick(WoodCols, seed, 4),
+                FacadeSurface.Brick => Pick(BrickCols, seed, 4),
+                FacadeSurface.Stone => kind is BuildingKind.Church or BuildingKind.Chapel or BuildingKind.Cathedral ? wall : Pick(StoneCols, seed, 4),
+                FacadeSurface.Metal => Pick(MetalCols, seed, 4),
+                FacadeSurface.Siding => region == Region.Scandinavia ? Pick(ScandiCols, seed, 4) : Pick(SidingCols, seed, 4),
+                FacadeSurface.TimberFrame => Pick(RenderLight, seed, 4),
                 _ => wall,
             };
         if (!osmRoofColor)
             roof = rf switch
             {
-                Surface.RoofTiles => roof.R > roof.B + 0.12f ? roof : Pick(TileCols, seed, 5),
-                Surface.RoofSlate => region == Region.Alps && r3 < 0.5 ? new Color(0.43f, 0.44f, 0.45f) : new Color(0.29f, 0.30f, 0.33f),
-                Surface.RoofMetal => Pick(RoofMetalCols, seed, 5),
-                Surface.RoofShingles => region == Region.NorthAmerica
+                FacadeSurface.RoofTiles => roof.R > roof.B + 0.12f ? roof : Pick(TileCols, seed, 5),
+                FacadeSurface.RoofSlate => region == Region.Alps && r3 < 0.5 ? new Color(0.43f, 0.44f, 0.45f) : new Color(0.29f, 0.30f, 0.33f),
+                FacadeSurface.RoofMetal => Pick(RoofMetalCols, seed, 5),
+                FacadeSurface.RoofShingles => region == Region.NorthAmerica
                     ? (r3 < 0.5 ? new Color(0.27f, 0.27f, 0.28f) : new Color(0.36f, 0.31f, 0.27f))
                     : new Color(0.44f, 0.40f, 0.36f), // tavillons gris argenté
-                Surface.RoofCopper => new Color(0.36f, 0.55f, 0.47f),
-                Surface.RoofGreen => new Color(0.36f, 0.45f, 0.26f),
-                Surface.RoofStone => new Color(0.46f, 0.45f, 0.43f),
+                FacadeSurface.RoofCopper => new Color(0.36f, 0.55f, 0.47f),
+                FacadeSurface.RoofGreen => new Color(0.36f, 0.45f, 0.26f),
+                FacadeSurface.RoofStone => new Color(0.46f, 0.45f, 0.43f),
                 _ => roof,
             };
 
@@ -251,7 +251,7 @@ public static class FacadeMaterials
             Region.NorthAmerica => 0.35,
             _ => 0.35,
         };
-        if (w is Surface.Metal or Surface.Concrete or Surface.Plain) pShutters *= 0.3;
+        if (w is FacadeSurface.Metal or FacadeSurface.Concrete or FacadeSurface.Plain) pShutters *= 0.3;
         bool shutters = residentialWindows && levels <= 8 && H(seed, 6) < pShutters;
 
         // ---- balcons
@@ -259,7 +259,7 @@ public static class FacadeMaterials
         if (housing && levels >= 2 && style is WindowStyle.Residential or WindowStyle.ShopResidential)
         {
             double b = H(seed, 7);
-            if (w is Surface.Chalet or Surface.Wood) balc = b < 0.8 ? BalconyKind.Wood : BalconyKind.None;
+            if (w is FacadeSurface.Chalet or FacadeSurface.Wood) balc = b < 0.8 ? BalconyKind.Wood : BalconyKind.None;
             else if (kind is BuildingKind.Apartments || levels >= 4) balc = levels <= 14 && b < (region == Region.NorthAmerica ? 0.3 : 0.6) ? BalconyKind.Metal : BalconyKind.None;
             else if (b < 0.3) balc = region is Region.Alps or Region.SwissLowland && b < 0.15 ? BalconyKind.Wood : BalconyKind.Metal;
         }
@@ -267,7 +267,7 @@ public static class FacadeMaterials
         return new BuildingLook(w, rf, shutters, balc, wall, roof);
     }
 
-    static Surface HousingWall(Region region, double alt, BuildingKind kind, bool small, int levels, double r, double r2)
+    static FacadeSurface HousingWall(Region region, double alt, BuildingKind kind, bool small, int levels, double r, double r2)
     {
         switch (region)
         {
@@ -276,25 +276,25 @@ public static class FacadeMaterials
                 // plus on monte, plus il y a de chalets en bois
                 double chalet = (small ? 0.35 : 0.15) + Smooth(650, 1400, alt) * (small ? 0.5 : 0.35);
                 if (kind is BuildingKind.Apartments && levels > 4) chalet *= 0.3;
-                if (r < chalet) return r2 < 0.75 ? Surface.Chalet : Surface.Wood;
-                return r2 < 0.12 ? Surface.Stone : Surface.Render;
+                if (r < chalet) return r2 < 0.75 ? FacadeSurface.Chalet : FacadeSurface.Wood;
+                return r2 < 0.12 ? FacadeSurface.Stone : FacadeSurface.Render;
             }
             case Region.Ticino:
-                return small && r < 0.4 ? Surface.Stone : r < 0.5 ? Surface.Stone : Surface.Render;
+                return small && r < 0.4 ? FacadeSurface.Stone : r < 0.5 ? FacadeSurface.Stone : FacadeSurface.Render;
             case Region.SwissLowland:
-                if (small && r < 0.10) return Surface.Chalet;
-                if (small && r < 0.17) return Surface.TimberFrame;
-                return r < 0.25 && levels <= 5 ? Surface.Stone : Surface.Render;
+                if (small && r < 0.10) return FacadeSurface.Chalet;
+                if (small && r < 0.17) return FacadeSurface.TimberFrame;
+                return r < 0.25 && levels <= 5 ? FacadeSurface.Stone : FacadeSurface.Render;
             case Region.NorthWestEurope:
-                return r < 0.62 ? Surface.Brick : r < 0.7 && small ? Surface.TimberFrame : Surface.Render;
+                return r < 0.62 ? FacadeSurface.Brick : r < 0.7 && small ? FacadeSurface.TimberFrame : FacadeSurface.Render;
             case Region.Scandinavia:
-                return small && r < 0.7 ? Surface.Siding : r < 0.4 ? Surface.Brick : Surface.Render;
+                return small && r < 0.7 ? FacadeSurface.Siding : r < 0.4 ? FacadeSurface.Brick : FacadeSurface.Render;
             case Region.NorthAmerica:
-                return small ? (r < 0.6 ? Surface.Siding : r < 0.85 ? Surface.Brick : Surface.Render) : (r < 0.45 ? Surface.Brick : Surface.Render);
+                return small ? (r < 0.6 ? FacadeSurface.Siding : r < 0.85 ? FacadeSurface.Brick : FacadeSurface.Render) : (r < 0.45 ? FacadeSurface.Brick : FacadeSurface.Render);
             case Region.Mediterranean:
-                return r < 0.15 ? Surface.Stone : Surface.Render;
+                return r < 0.15 ? FacadeSurface.Stone : FacadeSurface.Render;
             default:
-                return r < 0.15 ? Surface.Brick : Surface.Render;
+                return r < 0.15 ? FacadeSurface.Brick : FacadeSurface.Render;
         }
     }
 }

@@ -10,14 +10,14 @@ modèles 3D importés (swissBUILDINGS3D).
 | Donnée | Contenu |
 |---|---|
 | `COLOR.rgb` | couleur de base (sRGB) : teinte du crépi, du bois, des tuiles… |
-| `COLOR.a` | `1 − code / 255`. Code = matière (bits 0–5, enum `Surface`) + 64 si les fenêtres ont des volets. `1` = uni (aspect d'avant) |
+| `COLOR.a` | `1 − code / 255`. Code = matière (bits 0–5, enum `FacadeSurface`) + 64 si les fenêtres ont des volets. `1` = uni (aspect d'avant) |
 | `UV` | **en mètres**. Murs : (abscisse le long du mur, hauteur au-dessus du sol du rez-de-chaussée ; 3 unités par étage). Toits et faces quelconques : `FacadeMaterials.SlopeUv` (u horizontal le long du pan, v vers le bas de la pente) |
 | `UV2` | (motif de fenêtres `WindowStyle`, aléa 0–1 propre au bâtiment). Motif 0 = pas de fenêtres |
 
 Côté C# : `MeshAcc.Material = code` avant d'ajouter des sommets (l'alpha est rempli tout seul), ou
-`FacadeMaterials.Encode(couleur, code)`. Le code d'un mur avec volets : `FacadeMaterials.Code(Surface.Render, true)`.
+`FacadeMaterials.Encode(couleur, code)`. Le code d'un mur avec volets : `FacadeMaterials.Code(FacadeSurface.Render, true)`.
 
-## Matières (`enum Surface`)
+## Matières (`enum FacadeSurface`)
 
 | Code | Matière | Remarques |
 |---|---|---|

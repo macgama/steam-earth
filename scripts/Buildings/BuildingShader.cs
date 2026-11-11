@@ -4,7 +4,7 @@ using Godot;
 namespace SteamEarth;
 
 /// <summary>
-/// Shader des façades et des toits (bâtiments Overture et modèles importés). Les matières (<see cref="Surface"/>) sont
+/// Shader des façades et des toits (bâtiments Overture et modèles importés). Les matières (<see cref="FacadeSurface"/>) sont
 /// dessinées sans aucune image, d'après les UV en mètres : crépi, madriers de chalet, pierre, brique, béton banché,
 /// bardage, colombages, clins ; tuiles, ardoise ou fibrociment, tôle, tavillons, gravier, cuivre, toit végétalisé,
 /// lauzes ; balustrades de balcon. Les fenêtres d'habitation reçoivent un cadre, une tablette et parfois des volets.

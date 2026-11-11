@@ -504,7 +504,9 @@ public static class BuildingBuilder
         if (plinth)
         {
             // le socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
-            Walls(ext, baseH, floor0, map, PlinthColor(wall, seed), Vector2.Zero, fr, m, -1, 0, 0, 0, 0);
+            m.Material = FacadeMaterials.Code(look.Wall is FacadeSurface.Concrete or FacadeSurface.Metal ? FacadeSurface.Concrete : FacadeSurface.Stone);
+            Walls(ext, baseH, floor0, map, PlinthColor(wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
+            m.Material = look.WallCode;
             Walls(ext, floor0, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
         }
         else Walls(ext, baseH, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
@@ -822,7 +824,7 @@ public static class BuildingBuilder
         m.Material = look.RoofCode;
         Face(new[] { (A, low), (B, low), (C, high), (D, high) }, col, center, fr, m, uv2);
         // murs sous le toit en appentis : matière du mur, mais sans le rez-de-chaussée maçonné d'un chalet (UV en altitude)
-        m.Material = FacadeMaterials.Code(look.Wall == Surface.Chalet ? Surface.Wood : look.Wall);
+        m.Material = FacadeMaterials.Code(look.Wall == FacadeSurface.Chalet ? FacadeSurface.Wood : look.Wall);
         Face(new[] { (B, low), (C, high), (C, low) }, wall, center, fr, m, uv2);
         Face(new[] { (D, high), (A, low), (D, low) }, wall, center, fr, m, uv2);
         Face(new[] { (C, high), (D, high), (D, low), (C, low) }, wall, center, fr, m, uv2);
@@ -870,7 +872,7 @@ public static class BuildingBuilder
         double baseH = chapel ? top - 0.2 : floor0 - 1.0;
         double towerTop = chapel ? top + s * 1.2 : Math.Max(top + Math.Max(4, s * 0.8), eave + s * 2.4) * (kind == BuildingKind.Cathedral ? 1.15 : 1);
         double spire = s * (chapel ? 1.8 : 1.9);
-        m.Material = FacadeMaterials.Code(Surface.Stone);
+        m.Material = FacadeMaterials.Code(FacadeSurface.Stone);
         m.Box(fr, c, u, s / 2, s / 2, baseH, towerTop, stone);
         m.Material = 0;
         // ouvertures du beffroi (sombres) sur chaque face, sous la flèche
@@ -885,7 +887,7 @@ public static class BuildingBuilder
         }
         // flèche pyramidale
         var p = new[] { c - u * (s / 2) - v * (s / 2), c + u * (s / 2) - v * (s / 2), c + u * (s / 2) + v * (s / 2), c - u * (s / 2) + v * (s / 2) };
-        m.Material = FacadeMaterials.Code(spireCol.G > spireCol.R + 0.08f ? Surface.RoofCopper : spireCol.R > spireCol.B + 0.12f ? Surface.RoofTiles : Surface.RoofSlate);
+        m.Material = FacadeMaterials.Code(spireCol.G > spireCol.R + 0.08f ? FacadeSurface.RoofCopper : spireCol.R > spireCol.B + 0.12f ? FacadeSurface.RoofTiles : FacadeSurface.RoofSlate);
         for (int k = 0; k < 4; k++) Face(new[] { (p[k], towerTop), (p[(k + 1) % 4], towerTop), (c, towerTop + spire) }, spireCol, c, fr, m, new Vector2(0, (float)seed));
         m.Material = 0;
         // collisions : la tour (on ne grimpe pas sur la flèche)
@@ -1008,11 +1010,11 @@ public static class BuildingBuilder
         int nFaces = !wood && levels >= 3 ? Math.Min(2, faces.Count) : 1;
         int topLevel = wood ? Math.Min(levels - 1, 2) : Math.Min(levels - 1, 12);
         double depth = wood ? 1.2 : levels >= 3 ? 1.4 : 1.1, thick = wood ? 0.16 : 0.2;
-        var woodCol = look.Wall is Surface.Chalet or Surface.Wood ? MeshAcc.Shade(look.WallColor, 0.95f) : new Color(0.42f, 0.27f, 0.16f);
+        var woodCol = look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? MeshAcc.Shade(look.WallColor, 0.95f) : new Color(0.42f, 0.27f, 0.16f);
         var slabCol = wood ? woodCol : new Color(0.72f, 0.72f, 0.70f);
         var railCol = wood ? woodCol : Hash(seed * 3.1) < 0.6 ? new Color(0.22f, 0.23f, 0.24f) : new Color(0.85f, 0.85f, 0.83f);
-        byte slabMat = FacadeMaterials.Code(wood ? Surface.DeckWood : Surface.Concrete);
-        byte railMat = FacadeMaterials.Code(wood ? Surface.RailWood : Surface.RailMetal);
+        byte slabMat = FacadeMaterials.Code(wood ? FacadeSurface.DeckWood : FacadeSurface.Concrete);
+        byte railMat = FacadeMaterials.Code(wood ? FacadeSurface.RailWood : FacadeSurface.RailMetal);
         var uv2 = new Vector2(0, (float)seed);
         var up = fr.Up;
 
@@ -1050,7 +1052,7 @@ public static class BuildingBuilder
                     if (wood)
                     {
                         // consoles sous le plancher
-                        m.Material = FacadeMaterials.Code(Surface.Wood);
+                        m.Material = FacadeMaterials.Code(FacadeSurface.Wood);
                         int nb = w > 4.5 ? 3 : 2;
                         for (int c = 0; c < nb; c++)
                         {
