@@ -1,4 +1,6 @@
-# Steam Earth
+# Earth Games
+
+*(dépôt « steam-earth » : ancien nom de travail)*
 
 Prototype Godot 4.7 (C#) : **la Terre entière, ronde, à l'échelle 1:1**, avec son relief réel.
 On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
