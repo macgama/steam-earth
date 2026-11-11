@@ -454,6 +454,10 @@ Nord… Quatre niveaux : motifs simples en Bas ; volets, balcons et variations e
 en Élevé ; relief fin, coulures et mousse en Ultra. Convention des sommets (réutilisable pour les modèles importés) :
 [docs/MATERIAUX_BATIMENTS.md](docs/MATERIAUX_BATIMENTS.md).
 
+| Grindelwald (Moyen) : chalets, balcons, volets | Les matières (Élevé) |
+|---|---|
+| ![](docs/facades-grindelwald.jpg) | ![](docs/facades-matieres.jpg) |
+
 Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
 convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments.
 

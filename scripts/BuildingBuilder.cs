@@ -505,7 +505,7 @@ public static class BuildingBuilder
         {
             // le socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
             m.Material = FacadeMaterials.Code(look.Wall is FacadeSurface.Concrete or FacadeSurface.Metal ? FacadeSurface.Concrete : FacadeSurface.Stone);
-            Walls(ext, baseH, floor0, map, PlinthColor(wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
+            Walls(ext, baseH, floor0, map, PlinthColor(look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? new Color(0.80f, 0.78f, 0.72f) : wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
             m.Material = look.WallCode;
             Walls(ext, floor0, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
         }
