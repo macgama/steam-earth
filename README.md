@@ -33,8 +33,9 @@ avec une boussole en haut.
 | Espace ou E / C ou A | monter / descendre |
 | Maj | vitesse ×8 |
 | Molette | multiplicateur de vitesse |
-| F | mode marche avec un personnage : gravité vers le centre de la Terre, Espace = sauter, Maj = courir |
-| V (en marche) | vue arrière (caméra derrière le personnage) / vue à la première personne |
+| F | mode marche avec un personnage : gravité vers le centre de la Terre, Espace = sauter, Maj = courir, X = marcher tranquillement, C = s'accroupir ; il nage dans l'eau |
+| V (en marche) | vue arrière (caméra derrière le personnage) / vue à la première personne (on voit son corps) |
+| U | menu Personnage : qui on incarne, coiffure, tenue (voir `docs/PERSONNAGE.md`) |
 | G | menu des véhicules : voiture, vélo, bateau, avion (il apparaît devant toi et tu montes dedans) |
 | E (à pied / en véhicule) | monter dans le véhicule le plus proche / en descendre (à l'arrêt) |
 | Souris / molette (en marche) | tourner la caméra autour du personnage / la rapprocher ou l'éloigner |
@@ -481,6 +482,12 @@ avancer (il monte).
 Pistes suivantes : collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
 textures de façades.
 
+## Personnage
+
+Personnage 3D stylisé (homme ou femme, 6 personnages prêts, tout modifiable avec **U**), ~90 animations, vêtements
+modernes générés par le jeu et tenue qui suit l'activité (vélo, avion, bateau, nage). Modèles et animations :
+Quaternius, CC0. Détails : [`docs/PERSONNAGE.md`](docs/PERSONNAGE.md).
+
 ## Données (toutes gratuites)
 
 | Fichier | Source | Résolution |
@@ -503,6 +510,7 @@ textures de façades.
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
 | `data/geo/localities.tsv.br` | Localités OpenStreetMap via Overture Maps « divisions » (ODbL) | 1,7 million de villes et villages |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
+| `assets/characters/quaternius/` | Quaternius : Universal Base Characters, Universal Animation Library 1 et 2 (CC0) | — |
 | Horaires suisses (release `timetable-latest`) | opentransportdata.swiss, GTFS (usage libre, mention de la source obligatoire) | toutes les courses de l'année |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |
 

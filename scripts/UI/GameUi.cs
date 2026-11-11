@@ -33,6 +33,7 @@ public partial class GameUi : CanvasLayer
     ControlsPanel _controls;
     OptionsMenu _options;
     PanelContainer _credits;
+    CharacterMenu _character;
     Button _quitTitle, _quitPause;
     bool _startFromTitle, _graphicsFromOptions, _altFreed, _startWasOpen, _played;
     double _orbitLon = 5;
@@ -77,6 +78,7 @@ public partial class GameUi : CanvasLayer
         _titleButtons.AddThemeConstantOverride("separation", 4);
         col.AddChild(_titleButtons);
         _titleButtons.AddChild(UiTheme.MenuButton("Jouer", Play));
+        _titleButtons.AddChild(UiTheme.MenuButton("Personnage", OpenCharacter));
         _titleButtons.AddChild(UiTheme.MenuButton("Options", () => OpenSub(_options)));
         _titleButtons.AddChild(UiTheme.MenuButton("Commandes", () => OpenSub(_controls)));
         _titleButtons.AddChild(UiTheme.MenuButton("Crédits", () => OpenSub(_credits)));
@@ -107,6 +109,7 @@ public partial class GameUi : CanvasLayer
         pbox.AddChild(_pauseButtons);
         _pauseButtons.AddChild(UiTheme.MenuButton("Reprendre", Resume));
         _pauseButtons.AddChild(UiTheme.MenuButton("Changer de lieu", ChangePlace));
+        _pauseButtons.AddChild(UiTheme.MenuButton("Personnage", OpenCharacter));
         _pauseButtons.AddChild(UiTheme.MenuButton("Options", () => OpenSub(_options)));
         _pauseButtons.AddChild(UiTheme.MenuButton("Commandes", () => OpenSub(_controls)));
         _pauseButtons.AddChild(UiTheme.MenuButton("Crédits", () => OpenSub(_credits)));
@@ -134,6 +137,9 @@ public partial class GameUi : CanvasLayer
         center.AddChild(_controls);
         _credits = BuildCredits();
         center.AddChild(_credits);
+        _character = new CharacterMenu { Visible = false };
+        _character.Back += CloseSub;
+        center.AddChild(_character);
 
         Graphics.Closed += () =>
         {
@@ -148,6 +154,7 @@ public partial class GameUi : CanvasLayer
             if (a == "--controls") CallDeferred(MethodName.OpenSubByName, "controls");
             if (a == "--options") CallDeferred(MethodName.OpenSubByName, "options");
             if (a == "--credits") CallDeferred(MethodName.OpenSubByName, "credits");
+            if (a == "--character") CallDeferred(MethodName.OpenSubByName, "character");
         }
         Refresh();
     }
@@ -169,6 +176,8 @@ public partial class GameUi : CanvasLayer
         box.AddChild(UiTheme.Title("Crédits", 28));
         box.AddChild(UiTheme.Section("Moteur"));
         box.AddChild(UiTheme.Dim("Godot Engine (licence MIT) — godotengine.org", 15));
+        box.AddChild(UiTheme.Section("Personnages"));
+        box.AddChild(UiTheme.Dim("Corps, coiffures et animations : Quaternius (Universal Base Characters, Universal Animation Library 1 et 2, CC0) — quaternius.com", 15));
         box.AddChild(UiTheme.Section("Données géographiques"));
         foreach (var line in new[]
         {
@@ -278,7 +287,14 @@ public partial class GameUi : CanvasLayer
     void OpenSubByName(string which)
     {
         if (_base == Base.None) ShowPause();
+        if (which == "character") { OpenCharacter(); return; }
         OpenSub(which switch { "controls" => _controls, "options" => _options, _ => _credits });
+    }
+
+    void OpenCharacter()
+    {
+        _character.Open();
+        OpenSub(_character);
     }
 
     void OpenSub(Control panel)
@@ -288,6 +304,7 @@ public partial class GameUi : CanvasLayer
         Refresh();
         if (panel == _options) _options.FocusFirst();
         else if (panel == _controls) _controls.FocusBack();
+        else if (panel == _character) { }
         else _credits.GetChild(0).GetChild<Button>(-1).GrabFocus();
     }
 
@@ -306,6 +323,7 @@ public partial class GameUi : CanvasLayer
         _options.Visible = _sub == _options && !_graphicsFromOptions;
         _controls.Visible = _sub == _controls;
         _credits.Visible = _sub == _credits;
+        _character.Visible = _sub == _character;
         MenuOpen = _base != Base.None || _sub != null;
     }
 
@@ -358,6 +376,8 @@ public partial class GameUi : CanvasLayer
                         else { if (_base == Base.None) ShowPause(); OpenSub(_controls); }
                         Handled(); return;
                     case Key.Escape: Escape(); return;
+                    case Key.U when !MenuOpen && !Graphics.IsOpen && !Start.IsOpen && !Countries.IsOpen && !Vehicles.IsOpen:
+                        ShowPause(); OpenCharacter(); Handled(); return;
                 }
             }
             // les menus ouverts gardent les touches pour eux (pas de M, Tab, G… derrière la pause)

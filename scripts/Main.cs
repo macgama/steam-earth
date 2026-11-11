@@ -44,6 +44,7 @@ public partial class Main : Node3D
     string _shotPath;
     static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
     int _frames, _idleFrames, _minFrames = 30;
+    double? _testPitch; // --pitch : gardé quand le personnage est posé (tests à la première personne)
     int _walkTest; // > 0 : nombre d'images de marche automatique restant à faire après le chargement
 
     public override void _Ready()
@@ -191,6 +192,7 @@ public partial class Main : Node3D
         if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--fly") >= 0) walk = false; // tests de véhicules : rester en vol libre (avion en vol)
         if (walk) _camera.SetWalk(true);
         if (pitch is double pd) _camera.Pitch = pd * Math.PI / 180; // inclinaison de la caméra (tests)
+        _testPitch = pitch;
         if (_gotoCountry != null)
         {
             var c = Geography.Countries.Find(x => x.Name == _gotoCountry);
@@ -275,7 +277,7 @@ public partial class Main : Node3D
                 if (!_camera.AutoForward)
                 {
                     if (_spawnVehicle != null) { SpawnTestVehicle(); _spawnVehicle = null; } // véhicule de test : une fois le monde chargé (eau, relief fin)
-                    else if (_camera.Vehicle == null) _camera.SetWalk(true);
+                    else if (_camera.Vehicle == null) { _camera.SetWalk(true); if (_testPitch is double tp) _camera.Pitch = tp * Math.PI / 180; }
                     _camera.AutoForward = true;
                 }
                 _walkTest--;

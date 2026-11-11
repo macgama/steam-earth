@@ -117,6 +117,7 @@ public partial class FlyCamera : Camera3D
                 case Key.Escape: Input.MouseMode = Input.MouseModeEnum.Visible; break;
                 case Key.F: if (Ride == null && Vehicle == null) SetWalk(!Walk); break;
                 case Key.V: ThirdPerson = !ThirdPerson; if (ThirdPerson) Pitch = Math.Clamp(Pitch, -1.35, 0.7); break;
+                case Key.X when Walk: SlowWalk = !SlowWalk; break;
                 case Key.Key1: Teleport(46.70, 7.80, 1500, 120, -12); break;   // Interlaken, vers l'Eiger
                 case Key.Key2: Teleport(46.03, 7.70, 600, 200, 5); break;     // Zermatt, vers le Cervin
                 case Key.Key3: Teleport(46.45, 6.55, 3000, 90, -10); break;    // Lac Léman
@@ -135,6 +136,8 @@ public partial class FlyCamera : Camera3D
     public const double EyeHeight = 1.7;
     public const double WalkSpeed = 4.0;    // m/s (petit trot)
     public const double SprintSpeed = 9.0;  // m/s avec Maj
+    public const double StrollSpeed = 1.6;  // m/s en marchant tranquillement (X)
+    public bool SlowWalk;                   // X : marcher / trottiner
     public const double ThirdPersonPitch = -0.3; // caméra légèrement au-dessus du personnage
     public const double LookHeight = 1.55;       // la caméra vise la tête du personnage
     public bool Grounded { get; private set; }
@@ -218,9 +221,12 @@ public partial class FlyCamera : Camera3D
         if (keys && (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left))) move -= right;                     // A = Q en AZERTY
         bool sprint = (keys && Input.IsPhysicalKeyPressed(Key.Shift)) || AutoForward;
         bool jump = (keys && Input.IsPhysicalKeyPressed(Key.Space)) || (AutoJump && AutoForward);
+        Body.Crouching = keys && Input.IsPhysicalKeyPressed(Key.C);
+        // la tête suit le regard (vue arrière : seulement l'écart avec l'inclinaison habituelle de la caméra)
+        Body.LookPitch = ThirdPerson ? (Pitch - ThirdPersonPitch) * 0.6 : Pitch;
 
         var before = Body.PosD;
-        Body.Step(move, sprint ? SprintSpeed : WalkSpeed, jump, delta);
+        Body.Step(move, sprint ? SprintSpeed : SlowWalk ? StrollSpeed : WalkSpeed, jump, delta);
         // Frontière suisse : mur invisible (au-delà, seulement en vol)
         if (!SwissZone.Contains(Body.PosD))
         {
@@ -228,6 +234,7 @@ public partial class FlyCamera : Camera3D
             Body.PosD = before.Normalized() * Body.PosD.Length();
             SwissZone.Say(SwissZone.BorderBlocked);
         }
+        if (!ThirdPerson) Body.Yaw = Yaw; // première personne : le corps regarde où regarde la caméra
         Speed = Body.Speed;
         Grounded = Body.Grounded;
         FollowBody();
@@ -267,8 +274,10 @@ public partial class FlyCamera : Camera3D
             PosD = Chase(head, BuildingInteriors.PlayerInside ? Math.Min(CamDistance, 2.4) : CamDistance);
             target = head;
         }
-        else PosD = Body.PosD + up * EyeHeight;
-        Body.Visible = ThirdPerson;
+        else PosD = Body.EyePos; // yeux du personnage (suivent l'animation : course, nage, accroupi)
+        // le corps reste visible à la première personne (bras, jambes) ; la tête ne fait plus que de l'ombre
+        Body.Visible = true;
+        Body.FirstPerson = !ThirdPerson;
 
         Geo.ToLatLon(PosD.Normalized(), out double lat, out double lon);
         GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
@@ -377,6 +386,8 @@ public partial class FlyCamera : Camera3D
         if (Vehicle != null) LeaveVehicle(true);
         Vehicle = v;
         v.Occupied = true;
+        // tenue auto : casque à vélo, blouson de pilote, gilet de sauvetage…
+        PlayerAppearance.SetMode(v.Kind switch { VehicleKind.Bike => GameMode.Cycling, VehicleKind.Plane => GameMode.Flying, VehicleKind.Boat => GameMode.Sailing, _ => GameMode.Driving });
         Walk = false;
         if (Body != null) Body.Visible = false;
         Yaw = v.HeadingYaw;
@@ -394,6 +405,7 @@ public partial class FlyCamera : Camera3D
         var v = Vehicle;
         Vehicle = null;
         v.Occupied = false;
+        PlayerAppearance.SetMode(GameMode.Explore);
         Speed = 0;
         if (Body == null) return true;
         Geo.ToLatLon(v.ExitPoint.Normalized(), out double lat, out double lon);

@@ -8,7 +8,7 @@ namespace SteamEarth;
 public enum QualityLevel { Low = 0, Medium = 1, High = 2, Ultra = 3 }
 
 /// <summary>Qui projette une ombre : permet de couper les ombres des éléments les plus coûteux en premier.</summary>
-public enum ShadowCaster { Terrain, Trees, Buildings, Vehicles, Small }
+public enum ShadowCaster { Terrain, Trees, Buildings, Vehicles, Small, Characters }
 
 /// <summary>
 /// Valeurs concrètes d'un niveau de qualité. Objet immuable : on peut le lire depuis n'importe quel thread
@@ -198,9 +198,9 @@ public static class GraphicsQuality
             ShadowFilter = P(RenderingServer.ShadowQuality.Hard, RenderingServer.ShadowQuality.SoftLow,
                              RenderingServer.ShadowQuality.SoftMedium, RenderingServer.ShadowQuality.SoftUltra),
             ShadowCasters = P(Array.Empty<ShadowCaster>(),
-                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles },
-                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Trees, ShadowCaster.Terrain },
-                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Trees, ShadowCaster.Terrain, ShadowCaster.Small }),
+                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Characters },
+                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Characters, ShadowCaster.Trees, ShadowCaster.Terrain },
+                              new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Characters, ShadowCaster.Trees, ShadowCaster.Terrain, ShadowCaster.Small }),
             Msaa = P(Viewport.Msaa.Disabled, Viewport.Msaa.Msaa2X, Viewport.Msaa.Msaa4X, Viewport.Msaa.Msaa8X),
             ScreenSpaceAA = P(Viewport.ScreenSpaceAAEnum.Fxaa, Viewport.ScreenSpaceAAEnum.Disabled, Viewport.ScreenSpaceAAEnum.Disabled, Viewport.ScreenSpaceAAEnum.Disabled),
             Ssao = l >= QualityLevel.High,
