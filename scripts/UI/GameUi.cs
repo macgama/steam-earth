@@ -20,6 +20,9 @@ public partial class GameUi : CanvasLayer
     public TransitRide Ride;
     public GameHud Hud;
 
+    /// <summary>Nom du jeu affiché (écran titre, barre de la fenêtre).</summary>
+    public const string GameName = "Earth Games";
+
     /// <summary>Un écran de menu (titre, pause, options…) est affiché.</summary>
     public static bool MenuOpen { get; private set; }
 
@@ -39,6 +42,9 @@ public partial class GameUi : CanvasLayer
     {
         Layer = 3; // sous le menu Graphismes (4), qui peut s'ouvrir depuis les Options
         ProcessMode = ProcessModeEnum.Always;
+        // Titre de la fenêtre. config/name (project.godot) garde l'ancien nom « Steam Earth » pour l'instant :
+        // il fixe le dossier des données (user://), et le changer ferait perdre le cache des tuiles et les réglages.
+        GetWindow().Title = GameName;
 
         // --- écran titre : dégradé sombre à gauche, titre, boutons
         _title = FullRect();
@@ -60,7 +66,7 @@ public partial class GameUi : CanvasLayer
         col.OffsetLeft = 90; col.GrowVertical = Control.GrowDirection.Both;
         col.AddThemeConstantOverride("separation", 6);
         _title.AddChild(col);
-        var name = UiTheme.Title("STEAM EARTH", 64);
+        var name = UiTheme.Title(GameName.ToUpperInvariant(), 64);
         name.AutoTranslateMode = AutoTranslateModeEnum.Disabled;
         name.AddThemeConstantOverride("outline_size", 0);
         col.AddChild(name);
@@ -177,6 +183,7 @@ public partial class GameUi : CanvasLayer
         {
             Overture.Attribution,
             BuildingsLayer.Attribution,
+            SwissBuildings3D.Attribution,
             "Relief : Copernicus DEM GLO-30 © DLR / Airbus, swissALTI3D © swisstopo",
             "Couverture des sols : ESA WorldCover 2021 (CC BY 4.0)",
             Bathymetry.Attribution,

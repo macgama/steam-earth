@@ -45,6 +45,9 @@ public sealed record QualityProfile
     /// <summary>Facteur général pour les distances d'affichage des nouvelles couches (1 = Élevé).</summary>
     public double DrawDistanceScale { get; init; }
     public double BuildingsShowDistance { get; init; }
+    /// <summary>Suisse : vrais bâtiments swissBUILDINGS3D (toits réels, ~2 fois plus de triangles) dans ce rayon autour
+    /// du joueur (m) ; au-delà, bâtiments génériques plus légers.</summary>
+    public double RealBuildingsDistance { get; init; }
     /// <summary>Intérieurs des bâtiments : générés à moins de ce rayon du joueur (m), au plus InteriorMax à la fois.</summary>
     public double InteriorRadius { get; init; }
     public int InteriorMax { get; init; }
@@ -177,6 +180,7 @@ public static class GraphicsQuality
             GroundDetail = P(1, 2, 3, 3),
             DrawDistanceScale = P(0.5, 0.75, 1.0, 1.4),
             BuildingsShowDistance = P(10_000.0, 20_000.0, 40_000.0, 60_000.0),
+            RealBuildingsDistance = P(1_500.0, 4_000.0, 10_000.0, 60_000.0),
             InteriorRadius = P(25.0, 45.0, 80.0, 140.0),
             InteriorMax = P(6, 12, 24, 40),
             FurnitureDetail = P(0, 1, 2, 3),

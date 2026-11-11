@@ -1,4 +1,6 @@
-# Steam Earth
+# Earth Games
+
+*(dépôt « steam-earth » : ancien nom de travail)*
 
 Prototype Godot 4.7 (C#) : **la Terre entière, ronde, à l'échelle 1:1**, avec son relief réel.
 On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
@@ -397,6 +399,28 @@ Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 |---|---|---|---|
 | ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) | ![](docs/batiments-berne-nuit.jpg) | ![](docs/menu-depart.jpg) |
 
+### Suisse : les vrais bâtiments (swissBUILDINGS3D)
+
+En Suisse et au Liechtenstein, les bâtiments proches du joueur viennent de **swissBUILDINGS3D 3.0** (swisstopo,
+licence OGD, usage commercial autorisé avec « © swisstopo ») : vrais toits (pans, croupes, débords, lucarnes),
+chalets, églises et clochers tels qu'ils sont, au lieu de boîtes extrudées.
+
+- **Conversion** (`tools/swissbuildings3d/build_tiles.py`, workflow *Bâtiments suisses*) : les ~3 200 feuilles FileGDB
+  de swisstopo (~15 Go) deviennent une archive PMTiles (zoom 14, 2,67 millions de bâtiments, 1,3 Go, ~25 min) publiée dans la release `swissbuildings3d`.
+  Chaque bâtiment y garde ses murs, son toit, son emprise au sol, son type (OBJEKTART), son nom et son usage.
+- **Dans le jeu** (`Data/SwissBuildings3D.cs`, `Buildings/BuildingBuilder.Swiss.cs`) : le maillage est posé sur le relief
+  du jeu (pied des murs au point le plus bas du terrain, fondations sous le sol). Le contour OSM recouvert donne sa
+  fonction (et les lieux Overture Places, le nom) ; la porte est découpée dans le vrai mur, l'intérieur reste visitable,
+  les fenêtres suivent les étages. Les contours OSM qui ne recouvrent aucun bâtiment swisstopo (constructions récentes)
+  restent en bâtiments génériques.
+- **Niveaux de qualité** : vrais bâtiments jusqu'à 1,5 km (Bas), 4 km (Moyen), 10 km (Élevé), 60 km (Ultra) du joueur ;
+  plus loin, bâtiments génériques (moitié moins de triangles). Une tuile change de mode quand on s'en approche.
+- Avant la première publication de la release, ou hors ligne sans cache, tout reste en bâtiments génériques.
+
+| Berne : la cathédrale et la vieille ville | Lauterbrunnen : chalets et église | Devant une porte (on entre) |
+|---|---|---|
+| ![](docs/batiments-suisses-berne.jpg) | ![](docs/batiments-suisses-lauterbrunnen.jpg) | ![](docs/batiments-suisses-porte.jpg) |
+
 ### Fonction des bâtiments et intérieurs
 
 Chaque bâtiment reçoit une **fonction réelle** (`scripts/Buildings/BuildingKind.cs`), d'après, dans l'ordre :
@@ -441,8 +465,7 @@ Tests : `-- --build=46.948,7.451,500 --enter=church --shot=f.png` place le perso
 plus proche (`school`, `shop`, `tall`, `any`…) ; `--stairs` le met au pied de l'escalier, et `--walktest=N` le fait
 avancer (il monte).
 
-Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
-convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
+Pistes suivantes : collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
 textures de façades.
 
 ## Personnage
@@ -468,6 +491,7 @@ Quaternius, CC0. Détails : [`docs/PERSONNAGE.md`](docs/PERSONNAGE.md).
 | `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 | Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
+| Bâtiments en Suisse (streaming, à la demande) | swissBUILDINGS3D 3.0 © swisstopo (OGD, usage commercial autorisé) | tuiles z14 (release `swissbuildings3d`) |
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
 | `data/geo/localities.tsv.br` | Localités OpenStreetMap via Overture Maps « divisions » (ODbL) | 1,7 million de villes et villages |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
