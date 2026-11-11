@@ -25,7 +25,7 @@ public partial class GroundVehicle : Vehicle
     bool _inWater;
 
     // Modèle
-    Node3D _frontL, _frontR, _hubFL, _hubFR, _hubRL, _hubRR, _leanPivot, _legL, _legR, _rider, _bars;
+    Node3D _frontL, _frontR, _hubFL, _hubFR, _hubRL, _hubRR, _leanPivot, _rider, _bars;
 
     public GroundVehicle(bool bike)
     {
@@ -216,8 +216,7 @@ public partial class GroundVehicle : Vehicle
         Wheel(new Vector3(-0.78f, 0.32f, 1.3f), 0.32f, 0.22f, tyre, rim, this, out _hubRL);
         Wheel(new Vector3(0.78f, 0.32f, 1.3f), 0.32f, 0.22f, tyre, rim, this, out _hubRR);
 
-        _rider = Rider(new Vector3(-0.4f, 0.62f, 0.25f), out _legL, out _legR);
-        _legL.Rotation = _legR.Rotation = new Vector3(1.35f, 0, 0); // jambes vers les pédales
+        _rider = Rider(new Vector3(-0.4f, 0.6f, 0.3f), CharacterSeat.Car);
     }
 
     void BuildBike()
@@ -254,9 +253,7 @@ public partial class GroundVehicle : Vehicle
         Tube(Vector3.Zero, new Vector3(0, 0.14f, 0.04f), steel, _bars);
         Part(new BoxMesh { Size = new Vector3(0.14f, 0.05f, 0.26f) }, dark, seat + new Vector3(0, 0.03f, 0), _leanPivot); // selle
 
-        _rider = Rider(seat + new Vector3(0, 0.05f, 0), out _legL, out _legR, 0.55f);
-        RemoveChild(_rider);
-        _leanPivot.AddChild(_rider);
+        _rider = Rider(seat + new Vector3(0, 0.05f, 0.02f), CharacterSeat.Bike, _leanPivot);
     }
 
     void Tube(Vector3 a, Vector3 b, Material mat, Node3D parent = null)
@@ -268,7 +265,7 @@ public partial class GroundVehicle : Vehicle
 
     protected override void Animate()
     {
-        if (_rider != null) _rider.Visible = Occupied;
+        UpdateRider(_bike ? _pedal : 0, _bike ? _lean : 0);
         float w = -(float)(_wheelAngle % (2 * Math.PI));
         foreach (var hub in new[] { _hubFL, _hubFR, _hubRL, _hubRR }) if (hub != null) hub.Rotation = new Vector3(w, 0, 0);
         if (_frontL != null) _frontL.Rotation = new Vector3(0, -(float)_steer, 0);
@@ -277,9 +274,6 @@ public partial class GroundVehicle : Vehicle
         {
             _leanPivot.Rotation = new Vector3(0, 0, -(float)_lean);
             _bars.Rotation = new Vector3(0, -(float)_steer, 0);
-            float a = (float)Math.Sin(_pedal) * 0.55f;
-            _legL.Rotation = new Vector3(0.5f + a, 0, 0);
-            _legR.Rotation = new Vector3(0.5f - a, 0, 0);
         }
     }
 }

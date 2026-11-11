@@ -150,7 +150,7 @@ public partial class GameHud : CanvasLayer
         _unit.Text = UiSettings.SpeedUnit;
         _mode.Text = Camera.Vehicle != null ? Loc.T(Camera.Vehicle.Label)
             : Camera.Ride != null ? Loc.T("Transports publics")
-            : Camera.Walk ? Loc.T(Camera.Grounded ? "À pied" : "En l'air")
+            : Camera.Walk ? Loc.T(Camera.Body?.Swimming == true ? "À la nage" : Camera.Grounded ? "À pied" : "En l'air")
             : Loc.T("Vol libre");
 
         var player = Camera.PlayerPos;

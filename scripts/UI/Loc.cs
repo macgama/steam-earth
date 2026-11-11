@@ -84,6 +84,7 @@ public static class Loc
         ["Vol libre"] = "Free flight",
         ["À pied"] = "On foot",
         ["En l'air"] = "Airborne",
+        ["À la nage"] = "Swimming",
         ["Transports publics"] = "Public transport",
         ["Voiture"] = "Car", ["Vélo"] = "Bike", ["Bateau"] = "Boat", ["Avion"] = "Plane",
         ["Ciel dégagé"] = "Clear sky", ["Peu nuageux"] = "Partly cloudy", ["Nuageux"] = "Cloudy", ["Couvert"] = "Overcast",
