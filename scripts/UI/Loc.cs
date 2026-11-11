@@ -155,5 +155,14 @@ public static class Loc
         ["Images par seconde max"] = "Max frames per second",
         ["Sans limite"] = "Unlimited",
         ["Rechercher un pays ou une capitale…"] = "Search for a country or a capital…",
+        ["Chargement des villes et villages du monde…"] = "Loading the world's cities and villages…",
+        ["Liste des villes indisponible : "] = "City list unavailable: ",
+        ["Grandes villes ({0} villes et villages au total, tape un nom) :"] = "Major cities ({0} cities and villages in total, type a name):",
+        ["Aucun résultat : clique plutôt sur la Terre."] = "No result: click on the Earth instead.",
+        ["{0} — capitale {1}"] = "{0} — capital {1}",
+        ["ville"] = "city",
+        ["village"] = "village",
+        ["localité"] = "place",
+        ["hab."] = "inhab.",
     };
 }

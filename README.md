@@ -347,8 +347,13 @@ le workflow), puis retards en direct (GTFS-RT d'opentransportdata.swiss, clé gr
 Au lancement (et ensuite avec **M**), le joueur choisit où commencer :
 
 - **Reprendre** là où il était (position gardée toutes les 5 s dans `user://last_position.json`) ;
-- **chercher une ville** parmi les 7 342 villes de Natural Earth (noms en français, `data/geo/cities.tsv.gz`, généré par
-  `tools/geo/build_cities.py`) ou un pays : on arrive 500 m au-dessus et la ville est construite ;
+- **chercher n'importe quelle ville ou village de la Terre** (1 691 512 localités OpenStreetMap via Overture :
+  villes, villes moyennes, villages ; nom français, sinon anglais, sinon local, et le nom local en plus quand il diffère,
+  ex. « Berne » trouvée aussi en tapant « Bern », « Toyonaka » « 豊中市 ») ou un pays : on arrive 500 m au-dessus et
+  la localité est construite. Résultats : nom exact, puis début du nom, puis le reste, les plus grandes villes d'abord ;
+  région et population affichées pour distinguer les homonymes. Fichier `data/geo/localities.tsv.br` (19 Mo, Brotli),
+  généré par `tools/geo/build_localities.py` depuis le GeoParquet Overture « divisions », chargé en ~1,5 s en
+  arrière-plan (~135 Mo en mémoire), recherche en ~10 ms (`Data/Localities.cs`) ;
 - **cliquer sur la Terre** : chaque clic rapproche (de l'orbite jusqu'à ~25 km), le dernier clic atterrit à cet endroit
   exact, n'importe où sur la planète. Clic droit ou « Reculer » : vue plus large.
 
@@ -457,7 +462,7 @@ textures de façades.
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 | Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
 | Arrêts, gares, ports (streaming) | OpenStreetMap via Overture Maps, archive `base` (même licence ODbL) | tuiles z13 (~5 km) |
-| `data/geo/cities.tsv.gz` | Natural Earth 1:10m populated places (domaine public) | 7 342 villes |
+| `data/geo/localities.tsv.br` | Localités OpenStreetMap via Overture Maps « divisions » (ODbL) | 1,7 million de villes et villages |
 | `data/transport/airports.tsv.gz` | OurAirports (domaine public) | — |
 | Horaires suisses (release `timetable-latest`) | opentransportdata.swiss, GTFS (usage libre, mention de la source obligatoire) | toutes les courses de l'année |
 | Routes, chemins, rails, localités (streaming) | OpenStreetMap via Overture Maps (bucket AWS `overturemaps-extras-us-west-2`), © contributeurs OpenStreetMap, licence ODbL | tuiles z14 (~2,4 km) |

@@ -4,13 +4,15 @@ using System.IO;
 using System.IO.Compression;
 using System.Text.Json;
 using Godot;
+using SteamEarth.Data;
 
 namespace SteamEarth;
 
 /// <summary>
 /// Menu de départ (au lancement, puis touche M) : le joueur commence où il veut sur la planète.
 /// - « Reprendre » : là où il était à la fin de la partie précédente (user://last_position.json) ;
-/// - recherche parmi ~7 300 villes du monde (Natural Earth) et les pays : la ville choisie est construite ;
+/// - recherche parmi toutes les villes et tous les villages de la Terre (~1,7 million, OpenStreetMap,
+///   <see cref="Localities"/>) et les pays : la localité choisie est construite ;
 /// - clic sur la Terre : on zoome vers ce point (de l'orbite jusqu'à ~20 km), puis un dernier clic y atterrit.
 /// </summary>
 public partial class StartMenu : CanvasLayer
@@ -18,10 +20,8 @@ public partial class StartMenu : CanvasLayer
     public FlyCamera Camera;
     public BuildingsLayer Buildings;
 
-    sealed class CityEntry { public string Name, Country, Search; public double Lat, Lon, Pop; }
     sealed class SavedPos { public double Lat { get; set; } public double Lon { get; set; } public double Height { get; set; } public double Yaw { get; set; } }
 
-    readonly List<CityEntry> _cities = new();
     PanelContainer _panel;
     LineEdit _search;
     VBoxContainer _list;
@@ -86,80 +86,78 @@ public partial class StartMenu : CanvasLayer
 
     void LoadCities()
     {
-        try
-        {
-            var raw = Godot.FileAccess.GetFileAsBytes("res://data/geo/cities.tsv.gz");
-            using var z = new GZipStream(new MemoryStream(raw), CompressionMode.Decompress);
-            using var r = new StreamReader(z);
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            string line;
-            while ((line = r.ReadLine()) != null)
-            {
-                var f = line.Split('\t');
-                if (f.Length < 5) continue;
-                _cities.Add(new CityEntry
-                {
-                    Name = f[0], Country = f[1], Lat = double.Parse(f[2], inv), Lon = double.Parse(f[3], inv), Pop = double.Parse(f[4], inv),
-                    Search = Normalize(f[0] + " " + f[1]),
-                });
-            }
-        }
-        catch (Exception e) { GD.PrintErr($"[StartMenu] villes : {e.Message}"); }
+        try { Localities.Init(Godot.FileAccess.GetFileAsBytes("res://data/geo/localities.tsv.br")); }
+        catch (Exception e) { GD.PrintErr($"[StartMenu] localités : {e.Message}"); }
+        foreach (var c in Geography.Countries) if (!string.IsNullOrEmpty(c.Iso)) _countryNames[c.Iso] = c.Name;
+        // Natural Earth n'a pas de code à deux lettres pour ces pays (code à trois lettres à la place)
+        _countryNames["FR"] = "France"; _countryNames["NO"] = "Norvège"; _countryNames["XK"] = "Kosovo";
     }
 
-    static string Normalize(string s)
-    {
-        var d = s.Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new System.Text.StringBuilder();
-        foreach (var ch in d)
-            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark) sb.Append(char.ToLowerInvariant(ch));
-        return sb.ToString();
-    }
+    readonly Dictionary<string, string> _countryNames = new();
+    string _shownQuery;   // recherche affichée (refaite quand l'index finit de charger)
+    bool _shownReady;
 
-    /// <summary>Résultats : villes (les plus peuplées d'abord ; celles dont le nom commence par la recherche en tête), puis pays.</summary>
+    static string Normalize(string s) => Localities.Normalize(s);
+
+    /// <summary>Résultats : toutes les villes et villages de la Terre (nom exact, puis début du nom, puis le reste ;
+    /// les villes les plus peuplées d'abord), puis les pays.</summary>
     void Filter(string text)
     {
+        _shownQuery = text; _shownReady = Localities.Ready;
         foreach (var c in _list.GetChildren()) c.QueueFree();
         var q = Normalize(text.Trim());
-        if (q.Length == 0)
+        if (!Localities.Ready)
         {
-            AddLabel("Grandes villes :");
-            for (int i = 0; i < 25 && i < _cities.Count; i++) AddCity(_cities[i]);
+            AddLabel(Localities.Error != null ? Loc.T("Liste des villes indisponible : ") + Localities.Error : Loc.T("Chargement des villes et villages du monde…"));
+            if (q.Length == 0) return;
+        }
+        else if (q.Length == 0)
+        {
+            AddLabel(string.Format(Loc.T("Grandes villes ({0} villes et villages au total, tape un nom) :"), Localities.Count.ToString("N0", Loc.Culture)));
+            for (int i = 0; i < 25 && i < Localities.Count; i++) AddCity(Localities.Get(i));
             return;
         }
-        int n = 0;
-        foreach (bool prefix in new[] { true, false })
-            foreach (var c in _cities)
-            {
-                if (n >= 60) break;
-                bool starts = c.Search.StartsWith(q);
-                if (prefix ? !starts : starts || !c.Search.Contains(q)) continue;
-                AddCity(c); n++;
-            }
+        foreach (var i in Localities.Search(text, 60)) AddCity(Localities.Get(i));
         foreach (var k in Geography.Countries)
         {
             if (!Normalize(k.Name).Contains(q)) continue;
             var country = k;
-            var b = new Button { Text = $"{k.Name} — capitale {k.Capital}", Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None };
+            var b = new Button { Text = string.Format(Loc.T("{0} — capitale {1}"), k.Name, k.Capital), Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None };
             b.Pressed += () => GoToCity(country.Capital, country.Lat, country.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
             _list.AddChild(b);
         }
-        if (_list.GetChildCount() == 0) AddLabel("Aucun résultat : clique plutôt sur la Terre.");
+        if (_list.GetChildCount() == 0) AddLabel(Loc.T("Aucun résultat : clique plutôt sur la Terre."));
     }
 
     void AddLabel(string text)
     {
-        var l = new Label { Text = text };
+        var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart };
         l.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.6f));
         _list.AddChild(l);
     }
 
-    void AddCity(CityEntry c)
+    void AddCity(Localities.Entry c)
     {
-        string pop = c.Pop >= 1e6 ? $"{c.Pop / 1e6:0.#} M hab." : c.Pop >= 1000 ? $"{c.Pop / 1000:0} k hab." : "";
-        var b = new Button { Text = $"{c.Name} ({c.Country})  {pop}", Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None };
-        string cls = c.Pop >= 5e6 ? "megacity" : c.Pop >= 50_000 ? "city" : c.Pop >= 5_000 ? "town" : "village";
-        b.Pressed += () => GoToCity(c.Name, c.Lat, c.Lon, BuildingsLayer.RadiusFor(cls, c.Pop), BuildingsLayer.MaxRadiusFor(cls, c.Pop));
+        string hab = Loc.T("hab.");
+        string pop = c.Population >= 1e6 ? $"{c.Population / 1e6:0.#} M {hab}" : c.Population >= 1000 ? $"{c.Population / 1000:0} k {hab}" : c.Population > 0 ? $"{c.Population:0} {hab}" : "";
+        string kind = Loc.T(c.Class switch { 'c' => "ville", 't' => "ville", 'v' => "village", _ => "localité" });
+        string country = _countryNames.TryGetValue(c.Country, out var cn) ? cn : c.Country;
+        string where = c.Region.Length > 0 && !char.IsDigit(c.Region[0]) ? $"{country}, {c.Region}" : country;
+        string other = c.Other.Length > 0 ? $" « {c.Other} »" : "";
+        var b = new Button
+        {
+            Text = $"{c.Name}{other} — {where} · {kind}{(pop.Length > 0 ? ", " + pop : "")}",
+            Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, TooltipText = $"{c.Name}{other}\n{where}\n{c.Lat:0.0000}, {c.Lon:0.0000}",
+        };
+        string cls = c.Class switch
+        {
+            'c' => c.Population >= 5e6 ? "megacity" : "city",
+            't' => "town",
+            'v' => "village",
+            _ => c.Population >= 50_000 ? "city" : c.Population >= 5_000 ? "town" : "village",
+        };
+        b.Pressed += () => GoToCity(c.Name, c.Lat, c.Lon, BuildingsLayer.RadiusFor(cls, c.Population), BuildingsLayer.MaxRadiusFor(cls, c.Population));
         _list.AddChild(b);
     }
 
@@ -184,6 +182,9 @@ public partial class StartMenu : CanvasLayer
         _resume.Visible = _saved != null;
         if (_saved != null) _resume.Text = $"Reprendre là où j'étais ({Math.Abs(_saved.Lat):0.00}°{(_saved.Lat >= 0 ? "N" : "S")}, {Math.Abs(_saved.Lon):0.00}°{(_saved.Lon >= 0 ? "E" : "O")})";
         _search.CallDeferred(Control.MethodName.GrabFocus);
+        // test automatique : --search=texte
+        foreach (var arg in OS.GetCmdlineUserArgs())
+            if (arg.StartsWith("--search=")) { _search.Text = arg.Substring(9); Filter(_search.Text); }
     }
 
     public void Close()
@@ -295,6 +296,8 @@ public partial class StartMenu : CanvasLayer
 
     public override void _Process(double delta)
     {
+        // la liste des localités vient de finir de charger : on refait la recherche affichée
+        if (IsOpen && !_shownReady && Localities.Ready) Filter(_shownQuery ?? "");
         // Position gardée pour « Reprendre » (toutes les 5 s, pas pendant le menu)
         _saveClock += delta;
         if (_saveClock < 5 || IsOpen || GameUi.MenuOpen) return; // pas l'orbite de l'écran titre
