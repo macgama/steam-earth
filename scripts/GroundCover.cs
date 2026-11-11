@@ -34,6 +34,8 @@ public partial class GroundCover : Node3D
         public MultiMeshInstance3D Grass, Rocks;
         public bool Ready, Dead;
         public int Version;
+        public double Lat0, Lat1, Lon0, Lon1; // boîte de la case (degrés)
+        public Built Data;                    // gardé pour retirer l'herbe quand une route ou un bâtiment arrive
     }
 
     sealed class Built
@@ -47,6 +49,7 @@ public partial class GroundCover : Node3D
 
     readonly Dictionary<(int, int), Item> _cells = new();
     readonly ConcurrentQueue<((int, int) key, Item item, Built data)> _done = new();
+    readonly HashSet<(int, int)> _dirty = new();
     int _building;
     Mesh _tuft, _rock;
     ShaderMaterial _grassMat;
@@ -56,13 +59,28 @@ public partial class GroundCover : Node3D
     public int Cells => _cells.Count;
     public int GrassInstances { get; private set; }
 
-    public override void _ExitTree() => GraphicsQuality.Changed -= OnQuality;
+    public override void _ExitTree()
+    {
+        GraphicsQuality.Changed -= OnQuality;
+        Obstacles.ClearingsChanged -= OnClearings;
+    }
+
+    /// <summary>Route, chemin ou bâtiment ajouté (ou retiré) : les cases touchées refont leur tri.</summary>
+    void OnClearings(double lat0, double lat1, double lon0, double lon1)
+    {
+        foreach (var kv in _cells)
+        {
+            var c = kv.Value;
+            if (c.Ready && c.Lat1 >= lat0 && c.Lat0 <= lat1 && c.Lon1 >= lon0 && c.Lon0 <= lon1) _dirty.Add(kv.Key);
+        }
+    }
     void OnQuality(QualityProfile q, QualityProfile old) { GrassDensity = q.GrassDensity; Distance = q.GrassDistance; }
 
     public override void _Ready()
     {
         OnQuality(GraphicsQuality.Current, null);
         GraphicsQuality.Changed += OnQuality;
+        Obstacles.ClearingsChanged += OnClearings;
         _grassMat = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/grass.gdshader") };
         _rockMat = new StandardMaterial3D { VertexColorUseAsAlbedo = true, Roughness = 0.95f };
         _tuft = MakeTuft();
@@ -117,6 +135,17 @@ public partial class GroundCover : Node3D
             if (r.item.Dead) continue;
             Install(r.item, r.data);
         }
+        // Cases où une route ou un bâtiment est arrivé depuis : on retire l'herbe qui s'y trouve (quelques-unes par image)
+        if (_dirty.Count > 0)
+        {
+            var batch = new List<(int, int)>();
+            foreach (var k in _dirty) { batch.Add(k); if (batch.Count >= 3) break; }
+            foreach (var k in batch)
+            {
+                _dirty.Remove(k);
+                if (_cells.TryGetValue(k, out var c) && c.Ready && !c.Dead && c.Data != null) Install(c, c.Data);
+            }
+        }
 
         var player = Camera.PlayerPos;
         var up = player.Normalized();
@@ -136,7 +165,7 @@ public partial class GroundCover : Node3D
         }
 
         // Densité changée (qualité) : tout reconstruire
-        if (_builtDensity != GrassDensity) { foreach (var c in _cells.Values) Free(c); _cells.Clear(); _builtDensity = GrassDensity; }
+        if (_builtDensity != GrassDensity) { foreach (var c in _cells.Values) Free(c); _cells.Clear(); _dirty.Clear(); _builtDensity = GrassDensity; }
 
         var wanted = new HashSet<(int, int)>();
         if (active)
@@ -157,7 +186,11 @@ public partial class GroundCover : Node3D
                     wanted.Add((i, j));
                     if (!_cells.ContainsKey((i, j)) && _building < 4)
                     {
-                        var item = new Item { Origin = Geo.FromLatLon(clat, clon) * Geo.Radius };
+                        var item = new Item
+                        {
+                            Origin = Geo.FromLatLon(clat, clon) * Geo.Radius,
+                            Lat0 = i * dLat, Lat1 = (i + 1) * dLat, Lon0 = j * dLon, Lon1 = (j + 1) * dLon,
+                        };
                         _cells[(i, j)] = item;
                         Build((i, j), item, dLat, dLon);
                     }
@@ -167,7 +200,7 @@ public partial class GroundCover : Node3D
         // Cases trop loin : oubliées
         var drop = new List<(int, int)>();
         foreach (var kv in _cells) if (!wanted.Contains(kv.Key)) drop.Add(kv.Key);
-        foreach (var k in drop) { Free(_cells[k]); _cells.Remove(k); }
+        foreach (var k in drop) { Free(_cells[k]); _cells.Remove(k); _dirty.Remove(k); }
 
         // Placement relatif à la caméra (comme les chunks du terrain)
         var cam = Camera.PosD;
@@ -289,13 +322,34 @@ public partial class GroundCover : Node3D
 
     void Install(Item item, Built b)
     {
+        item.Data = b;
         GrassInstances -= item.Grass?.Multimesh?.InstanceCount ?? 0;
+        if (item.Rocks != null) Obstacles.Set(item.Rocks, null);
         item.Grass?.QueueFree(); item.Rocks?.QueueFree();
-        item.Grass = Make(_tuft, b.Grass, b.GrassTint);
-        item.Rocks = Make(_rock, b.Rocks, b.RockTint);
-        GrassInstances += b.Grass.Length;
-        if (item.Rocks != null) Obstacles.Set(item.Rocks, b.Solid);
+        // Ni herbe ni cailloux sur les routes, chemins, voies ferrées et dans les bâtiments (empreintes « Clears »)
+        double mLat = 2 / MetersPerDegLat, mLon = mLat / Math.Max(0.05, Math.Cos((item.Lat0 + item.Lat1) * Math.PI / 360));
+        var clear = Obstacles.ClearingsIn(item.Lat0 - mLat, item.Lat1 + mLat, item.Lon0 - mLon, item.Lon1 + mLon);
+        var (grass, grassTint) = Keep(b.Grass, b.GrassTint, b.Origin, clear);
+        var (rocks, rockTint) = Keep(b.Rocks, b.RockTint, b.Origin, clear);
+        item.Grass = Make(_tuft, grass, grassTint);
+        item.Rocks = Make(_rock, rocks, rockTint);
+        GrassInstances += grass.Length;
+        if (item.Rocks != null)
+            Obstacles.Set(item.Rocks, clear.Count == 0 || b.Solid == null ? b.Solid : b.Solid.FindAll(r => !Obstacles.InsideAny(clear, r.Center)));
         item.Ready = true;
+    }
+
+    static (Transform3D[], Color[]) Keep(Transform3D[] xf, Color[] tints, Vec3d origin, List<Obstacles.Shape> clear)
+    {
+        if (clear.Count == 0 || xf.Length == 0) return (xf, tints);
+        var kx = new List<Transform3D>(xf.Length); var kc = new List<Color>(xf.Length);
+        for (int i = 0; i < xf.Length; i++)
+        {
+            var o = xf[i].Origin;
+            if (Obstacles.InsideAny(clear, origin + new Vec3d(o.X, o.Y, o.Z))) continue;
+            kx.Add(xf[i]); kc.Add(tints[i]);
+        }
+        return (kx.ToArray(), kc.ToArray());
     }
 
     MultiMeshInstance3D Make(Mesh mesh, Transform3D[] xf, Color[] tints)

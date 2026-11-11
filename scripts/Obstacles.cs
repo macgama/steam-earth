@@ -121,6 +121,7 @@ public static class Obstacles
         ByOwner[id] = list;
         Count += shapes.Count;
         ApplyClearings(list);
+        NotifyClearings(list);
         if (!known) owner.TreeExiting += () => Remove(id);
     }
 
@@ -169,9 +170,67 @@ public static class Obstacles
         list.Add((key, s));
     }
 
+    /// <summary>Empreintes « Clears » (routes, bâtiments) ajoutées ou retirées dans la boîte (lat0, lat1, lon0, lon1) :
+    /// l'herbe autour du joueur (<see cref="GroundCover"/>) se met à jour.</summary>
+    public static event Action<double, double, double, double> ClearingsChanged;
+
+    static void NotifyClearings(List<(long cell, Shape shape)> list)
+    {
+        if (ClearingsChanged == null) return;
+        double la0 = double.MaxValue, la1 = double.MinValue, lo0 = double.MaxValue, lo1 = double.MinValue;
+        foreach (var (_, s) in list)
+        {
+            if (!s.Clears || s.Ring == null) continue;
+            la0 = Math.Min(la0, s.Lat0); la1 = Math.Max(la1, s.Lat1); lo0 = Math.Min(lo0, s.Lon0); lo1 = Math.Max(lo1, s.Lon1);
+        }
+        if (la0 <= la1) ClearingsChanged(la0, la1, lo0, lo1);
+    }
+
+    /// <summary>Empreintes « Clears » (polygones) affichées dont la boîte touche (lat0, lat1, lon0, lon1).</summary>
+    public static List<Shape> ClearingsIn(double lat0, double lat1, double lon0, double lon1)
+    {
+        var res = new List<Shape>();
+        int la0 = (int)Math.Floor(lat0 * CellsPerDeg), la1 = (int)Math.Floor(lat1 * CellsPerDeg);
+        int lo0 = (int)Math.Floor(lon0 * CellsPerDeg), lo1 = (int)Math.Floor(lon1 * CellsPerDeg);
+        int stamp = ++_stamp;
+        for (int la = la0; la <= la1; la++)
+        for (int lo = lo0; lo <= lo1; lo++)
+        {
+            if (!Cells.TryGetValue(Key(la, lo), out var l)) continue;
+            foreach (var s in l)
+            {
+                if (s.Stamp == stamp) continue;
+                s.Stamp = stamp;
+                if (!s.Clears || s.Ring == null) continue;
+                if (s.Lat1 < lat0 || s.Lat0 > lat1 || s.Lon1 < lon0 || s.Lon0 > lon1) continue;
+                if (s.Owner is Node3D n3 && (!GodotObject.IsInstanceValid(n3) || !n3.IsVisibleInTree())) continue;
+                res.Add(s);
+            }
+        }
+        return res;
+    }
+
+    /// <summary>Vrai si le point <paramref name="p"/> (repère planète) tombe dans l'une des empreintes.</summary>
+    public static bool InsideAny(List<Shape> shapes, Vec3d p)
+    {
+        if (shapes.Count == 0) return false;
+        var up = p.Normalized();
+        Geo.ToLatLon(up, out double lat, out double lon);
+        Local? loc = null;
+        foreach (var s in shapes)
+        {
+            if (lat < s.Lat0 || lat > s.Lat1 || lon < s.Lon0 || lon > s.Lon1) continue;
+            loc ??= new Local(up);
+            Locate(s, loc.Value, 0, 0, out bool inside, out _, out _, out _);
+            if (inside) return true;
+        }
+        return false;
+    }
+
     static void Remove(ulong id)
     {
         if (!ByOwner.Remove(id, out var list)) return;
+        NotifyClearings(list);
         var seen = new HashSet<Shape>();
         foreach (var (key, s) in list)
         {
