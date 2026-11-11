@@ -245,8 +245,10 @@ public static class VehicleModels
         var scene = GD.Load<PackedScene>(KenneyDir + file + ".glb");
         if (scene == null) { GD.PrintErr($"[Véhicules] modèle introuvable : {file}"); return; }
         var root = scene.Instantiate<Node3D>();
-        var holder = Pivot(v, Vector3.Zero);
-        if (twoWheels) rig.Lean = holder;
+        // pivot d'inclinaison (deux-roues) séparé : Animate réécrit sa rotation, le demi-tour du modèle est en dessous
+        var lean = Pivot(v, Vector3.Zero);
+        if (twoWheels) rig.Lean = lean;
+        var holder = Pivot(lean, Vector3.Zero);
         holder.Scale = Vector3.One * scale;
         holder.Rotation = new Vector3(0, Mathf.Pi, 0); // les modèles Kenney regardent vers +Z
         holder.AddChild(root);
@@ -283,13 +285,7 @@ public static class VehicleModels
             hub.AddChild(n);
             rig.Wheels.Add((hub, -0.3f * scale)); // rayon négatif : le modèle est retourné (demi-tour), la roue tourne en sens inverse
         }
-        if (twoWheels)
-        {
-            // siège dans le repère du modèle (retourné, mis à l'échelle) : on annule l'un et l'autre pour le personnage
-            Rider(holder, rig, new Vector3(0, 0.6f, 0.12f), CharacterSeat.Bike);
-            rig.Rider.Rotation = new Vector3(0, Mathf.Pi, 0);
-            rig.Rider.Scale = Vector3.One / scale;
-        }
+        if (twoWheels) Rider(lean, rig, new Vector3(0, 0.8f, 0.15f), CharacterSeat.Bike); // selle, repère du véhicule
     }
 
     static void Collect(Node n, List<Node3D> list)
