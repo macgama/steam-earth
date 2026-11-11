@@ -34,6 +34,7 @@ public abstract partial class LabelTileLayer : Node3D
         public int Priority;           // à la fusion, la position de la plus haute priorité est gardée
         internal Vec3d Pos;
         internal bool Grounded;
+        internal double SampledSpacing = double.MaxValue; // précision du relief déjà lue (m)
         internal int Refs;
         internal Node3D Node;
         internal Label3D Label;
@@ -84,10 +85,14 @@ public abstract partial class LabelTileLayer : Node3D
             bool vis = ShowLayer && d < p.MaxDistance;
             p.Node.Visible = vis;
             if (!vis) continue;
-            if (!p.Grounded && d < Math.Max(p.MaxDistance, 20_000))
+            // Précision du relief selon la distance : un aéroport visible à 300 km n'a pas besoin du 30 m
+            // (le lire à chaque image chargeait des blocs entiers de données détaillées tout autour du joueur).
+            double want = d < 3000 ? 2 : Math.Max(30, d / 40);
+            if (!p.Grounded && want < p.SampledSpacing)
             {
-                float h = HeightProvider.Sample(p.Lat, p.Lon, d < 3000 ? 2 : 30, out bool water, out bool pending);
-                p.Grounded = !pending && d < 3000; // de loin : altitude provisoire, affinée en s'approchant
+                float h = HeightProvider.Sample(p.Lat, p.Lon, want, out bool water, out bool pending);
+                if (!pending) p.SampledSpacing = want * 0.7; // affinée seulement quand on s'est bien rapproché
+                p.Grounded = !pending && d < 3000;
                 p.Pos = Geo.FromLatLon(p.Lat, p.Lon) * (Geo.Radius + (water ? Math.Max(h, 0) : h) + p.Lift);
             }
             p.Node.Position = (p.Pos - cam).ToVector3();

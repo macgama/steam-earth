@@ -22,6 +22,11 @@ uniform float detail_distance = 1500.0;  // au-delà, seule la couleur macro res
 uniform float scale_near = 3.0;          // m par répétition (motif fin)
 uniform float scale_far = 23.0;          // m par répétition (motif large, casse la répétition)
 uniform bool two_scales = true;          // qualité basse : une seule échelle (deux fois moins de lectures)
+// En ville (WorldCover « bâti ») : le sol visible entre les rues et les maisons est surtout fait de jardins, de pelouses
+// et de cours gravillonnées. Un motif de grandes taches répartit herbe et pavés/gravier au lieu d'un gris uni.
+uniform vec3 garden_color : source_color = vec3(0.36, 0.47, 0.22);
+uniform float garden_share = 0.55;       // part du sol urbain en jardins (0 = tout pavé)
+uniform bool macro_variation = false;    // Ultra : variations de teinte à grande échelle sur tout le sol (moins uniforme)
 
 // Neige réelle : carte mondiale GFS 360×181 (R = épaisseur m, G = altitude du relief du modèle m, B = température 2 m K).
 // Recalée sur le vrai relief : plus d'épaisseur en altitude, fonte quand la température locale dépasse ~1 °C.
@@ -66,6 +71,31 @@ vec3 tri(float layer, float scale, vec3 bw) {
 		+ texture(layers, vec3(p.xy, layer)).rgb * bw.z;
 }
 
+float hash2(vec2 p) {
+	p = fract(p * vec2(123.34, 456.21));
+	p += dot(p, p + 45.32);
+	return fract(p.x * p.y);
+}
+
+// bruit de valeur lissé (motif de taches), répété toutes les « per » cases : tex_pos saute de 1 024 m d'un chunk
+// à l'autre (recalage), la taille des taches divise donc 1 024 pour que le motif reste continu
+float vnoise(vec2 p, float per) {
+	vec2 i = floor(p), f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash2(mod(i, per)), b = hash2(mod(i + vec2(1.0, 0.0), per));
+	float c = hash2(mod(i + vec2(0.0, 1.0), per)), d = hash2(mod(i + vec2(1.0, 1.0), per));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float blot2(vec2 p, float size_a, float size_b) {
+	return vnoise(p / size_a, 1024.0 / size_a) * 0.65 + vnoise(p / size_b + 17.0, 1024.0 / size_b) * 0.35;
+}
+
+// motif de taches projeté sur les 3 plans (comme les textures), sans couture ; tailles en mètres, diviseurs de 1 024
+float blots(vec3 bw, float size_a, float size_b) {
+	return blot2(tex_pos.yz, size_a, size_b) * bw.x + blot2(tex_pos.xz, size_a, size_b) * bw.y + blot2(tex_pos.xy, size_a, size_b) * bw.z;
+}
+
 vec3 layer_color(float layer, vec3 bw) {
 	// deux échelles mélangées : moins de répétition visible
 	if (!two_scales) return tri(layer, scale_near * 1.5, bw);
@@ -89,9 +119,23 @@ void fragment() {
 		if (w4.r > 0.01) d += layer_color(0.0, bw) * w4.r / 0.57;
 		if (w4.g > 0.01) d += layer_color(1.0, bw) * w4.g / 0.52;
 		if (w4.b > 0.01) d += layer_color(2.0, bw) * w4.b / 0.60;
-		if (w4.a > 0.01) d += layer_color(3.0, bw) * w4.a / 0.54;
+		float garden = 0.0;
+		if (w4.a > 0.01) {
+			// taches de 4 à 8 m : jardins (herbe) ou cours pavées / gravillonnées
+			float m = blots(bw, 8.0, 4.0);
+			garden = smoothstep(1.0 - garden_share - 0.08, 1.0 - garden_share + 0.08, m) * w4.a;
+			d += layer_color(3.0, bw) * (w4.a - garden) / 0.56;
+			d += vec3(garden); // remplacé plus bas par la couleur des jardins
+		}
 		if (dirt > 0.01) d += layer_color(4.0, bw) * dirt / 0.63;
 		vec3 ground = macro * d;
+		// jardins : couleur d'herbe propre (la couleur macro de WorldCover est le gris du bâti)
+		if (garden > 0.001) ground = mix(ground, srgb_to_linear(garden_color) * layer_color(0.0, bw) / 0.57, garden);
+		if (macro_variation) {
+			// grandes nuances (30 à 120 m) : prés plus ou moins verts, sols plus ou moins secs
+			float v = blots(bw, 128.0, 32.0);
+			ground *= mix(vec3(0.88, 0.9, 0.94), vec3(1.1, 1.07, 0.98), v);
+		}
 		// roche et neige : couleur propre de la texture
 		float rock = clamp(rock_snow.x, 0.0, 1.0);
 		float snow = max(clamp(rock_snow.y, 0.0, 1.0), wsnow);

@@ -76,9 +76,23 @@ g = 0.86 + 0.1 * noise(1.5, 15) + 0.04 * noise(0.5, 16)
 snow = tint(g, (1.0, 1.0, 1.0)) - tint(0.06 * noise(1.2, 17), (0.6, 0.3, 0.0))
 save("snow", snow)
 
-# Urbain / asphalte : grain fin + taches + joints
-g = 0.42 + 0.12 * noise(0.1, 18) + 0.15 * noise(1.4, 19)
+# Urbain : pavés et dalles (rangées décalées, teinte propre à chaque pierre, joints sombres) + gravier fin.
+# Le shader mélange ce motif avec des taches de jardins (herbe) : le sol des villes n'est plus un gris uni.
 x = np.arange(N)[None, :] * np.ones((N, 1))
-joints = ((x % 128) < 2) | ((y % 128) < 2)
-g = g - 0.12 * joints
-save("urban", tint(g, (1.0, 1.0, 1.0)))
+rows, cols = 16, 8            # 512 px = 3 m (scale_near) : pierres d'environ 19 × 37 cm ; raccordable
+ph, pw = N // rows, N // cols
+row = (y // ph).astype(int)
+shift = np.where(row % 2 == 0, 0, pw // 2)
+col = (((x + shift) // pw).astype(int)) % cols
+stone_rng = np.random.default_rng(20)
+tone = stone_rng.uniform(-0.09, 0.09, size=(rows, cols))
+stone = tone[row % rows, col]
+jx = ((x + shift) % pw) < 3
+jy = (y % ph) < 3
+joints = jx | jy
+grain = 0.12 * noise(0.1, 18) + 0.1 * noise(1.2, 19)
+g = 0.48 + stone + grain - 0.20 * joints
+# usure : une partie des pierres est recouverte de gravier (taches)
+gravel = noise(1.6, 21) > 0.62
+g = np.where(gravel, 0.44 + 0.22 * noise(0.05, 22) + 0.06 * noise(1.0, 23), g)
+save("urban", tint(g, (1.0, 0.98, 0.95)))

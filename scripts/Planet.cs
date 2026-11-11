@@ -108,6 +108,9 @@ public partial class Planet : Node3D
         public bool? Hd;        // le chunk touche une zone haute définition (calculé au besoin)
         public bool Sea;        // le chunk touche la mer
         public int BuiltVersion;
+        public int Fallbacks = int.MaxValue; // points du maillage affiché pris sur une donnée de secours (voir ChunkData)
+        public int Retries;      // reconstructions de suite restées provisoires
+        public double NotBefore; // pas de nouvelle reconstruction avant (s, horloge du jeu)
     }
 
     public override void _Ready()
@@ -130,11 +133,14 @@ public partial class Planet : Node3D
         HdMaxLevel = Math.Max(MaxLevel, q.TerrainHdMaxLevel);
         SeaMaxLevel = Math.Max(MaxLevel, q.WaterMaxLevel);
         MaxConcurrentBuilds = q.TerrainBuildThreads;
-        // Textures du sol : 0 = aucune ; 1 = une échelle, proches ; 2 = deux échelles, 800 m ; 3 = deux échelles, 1,5 km
-        int gd = Math.Clamp(q.GroundDetail, 0, 3);
+        HeightProvider.ApplyQuality(q);
+        // Textures du sol : 0 = aucune ; 1 = une échelle, proches ; 2 = deux échelles, 800 m ; 3 = deux échelles, 1,5 km ;
+        // 4 = deux échelles, 2,5 km + nuances à grande échelle sur tout le sol
+        int gd = Math.Clamp(q.GroundDetail, 0, 4);
         _material.SetShaderParameter("detail_strength", gd > 0 ? 1.0f : 0.0f);
-        _material.SetShaderParameter("detail_distance", gd switch { 1 => 300f, 2 => 800f, _ => 1500f });
+        _material.SetShaderParameter("detail_distance", gd switch { 1 => 300f, 2 => 800f, 3 => 1500f, _ => 2500f });
         _material.SetShaderParameter("two_scales", gd >= 2);
+        _material.SetShaderParameter("macro_variation", gd >= 4);
     }
 
     void OnQualityChanged(QualityProfile q, QualityProfile old)
@@ -168,9 +174,13 @@ public partial class Planet : Node3D
         };
     }
 
+    double _time;
+    readonly System.Collections.Generic.List<(QuadNode node, double priority)> _wanted = new();
+
     public override void _Process(double delta)
     {
         if (Camera == null) return;
+        _time += delta;
         // Intègre les chunks terminés (au plus N par image pour éviter les à-coups)
         for (int k = 0; k < 24 && _done.TryDequeue(out var item); k++)
         {
@@ -192,8 +202,23 @@ public partial class Planet : Node3D
                 | ((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift));
             mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, fmt);
             item.node.Requested = false;
-            item.node.Incomplete = item.data.Incomplete;
             item.node.BuiltVersion = item.data.DataVersion;
+            if (item.data.Incomplete)
+            {
+                // Toujours provisoire : on espace les essais (sinon les mêmes chunks lointains occupent tous les fils).
+                item.node.Retries++;
+                item.node.NotBefore = _time + Math.Min(0.15 * (1 << Math.Min(item.node.Retries, 6)), 6);
+            }
+            else item.node.Retries = 0;
+            if (item.node.Mesh != null && item.data.Fallbacks > item.node.Fallbacks)
+            {
+                // Reconstruction moins bonne que le maillage affiché (des données ont été libérées entre-temps) :
+                // on garde l'ancien plutôt que de faire réapparaître le relief de secours.
+                item.node.Incomplete = true;
+                continue;
+            }
+            item.node.Incomplete = item.data.Incomplete;
+            item.node.Fallbacks = item.data.Fallbacks;
             if (item.node.Mesh != null)
             {
                 // Reconstruction (données fines arrivées) : on remplace le maillage sur place.
@@ -231,7 +256,32 @@ public partial class Planet : Node3D
         _material.SetShaderParameter("lights_strength", (float)Math.Clamp((h - 200) / 4000, 0.12, 1.0));
         _camAlt = cam.Length() - Geo.Radius;
         _horizon = Math.Sqrt(h * (2 * Geo.Radius + h)) + 340_000; // + horizon d'un sommet de 9 km
+        _wanted.Clear();
         foreach (var r in _roots) Update(r, cam);
+        IssueRequests(cam);
+    }
+
+    /// <summary>
+    /// Lance les constructions voulues, les plus proches du joueur d'abord. Avant, l'ordre de parcours de l'arbre
+    /// décidait : des chunks lointains reconstruits en boucle pouvaient retarder longtemps le sol sous les pieds.
+    /// Une reconstruction (le chunk a déjà un maillage provisoire) passe après une première construction.
+    /// </summary>
+    void IssueRequests(Vec3d cam)
+    {
+        if (_wanted.Count == 0) return;
+        _wanted.Sort((a, b) => a.priority.CompareTo(b.priority));
+        foreach (var (node, _) in _wanted)
+        {
+            if (_inFlight >= MaxConcurrentBuilds) { _wantedMore = true; break; }
+            Request(node);
+        }
+    }
+
+    void Want(QuadNode n, Vec3d cam)
+    {
+        if (n.Requested || n.Dead) return;
+        double d = Math.Max(0, (cam - n.LodCenter).Length() - n.Edge * 0.7);
+        _wanted.Add((n, n.Ready ? d * 3 + 50 : d));
     }
 
     void Request(QuadNode n)
@@ -287,7 +337,7 @@ public partial class Planet : Node3D
             n.Mesh.Position = (n.Center - cam).ToVector3();
             VisibleChunks++;
             // Des données plus fines sont arrivées depuis la construction : on reconstruit.
-            if (n.Incomplete && n.BuiltVersion != StreamedRaster.DataVersion) Request(n);
+            if (n.Incomplete && n.BuiltVersion != StreamedRaster.DataVersion && _time >= n.NotBefore) Want(n, cam);
             if (n.Level > DeepestLevel) DeepestLevel = n.Level;
         }
     }
@@ -295,7 +345,7 @@ public partial class Planet : Node3D
     void Update(QuadNode n, Vec3d cam)
     {
         TotalChunks++;
-        if (!n.Ready) Request(n);
+        if (!n.Ready) Want(n, cam);
 
         if (WantsSplit(n, cam))
         {
@@ -311,7 +361,7 @@ public partial class Planet : Node3D
                 };
             }
             bool allReady = true;
-            foreach (var c in n.Children) { if (!c.Ready) { Request(c); allReady = false; } }
+            foreach (var c in n.Children) { if (!c.Ready) { Want(c, cam); allReady = false; } }
             if (allReady)
             {
                 Show(n, cam, false);

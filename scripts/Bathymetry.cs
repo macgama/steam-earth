@@ -19,7 +19,7 @@ public static class Bathymetry
     static string Hemi(int v, char pos, char neg, string fmt) => (v >= 0 ? pos : neg) + Math.Abs(v).ToString(fmt);
 
     public static readonly StreamedRaster Gebco = new("gebco", 30, (lat, lon) =>
-        $"{Release}/gebco_{Hemi(lat, 'N', 'S', "00")}{Hemi(lon, 'E', 'W', "000")}.tif", 48);
+        $"{Release}/gebco_{Hemi(lat, 'N', 'S', "00")}{Hemi(lon, 'E', 'W', "000")}.tif", 128);
 
     /// <summary>
     /// Altitude du fond (m, négative) sous une mer, pour un maillage aux sommets espacés de <paramref name="spacing"/> m.

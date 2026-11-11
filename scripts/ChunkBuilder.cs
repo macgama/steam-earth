@@ -18,6 +18,8 @@ public sealed class ChunkData
     public float[] Geo3;      // 3 par sommet : latitude, longitude (degrés), altitude (m) — neige réelle dans le shader
     public int[] Indices;
     public Vec3d Center; // centre du chunk dans le repère planète (double), au niveau de la mer
+    /// <summary>Points pris sur une donnée de secours (voir HeightProvider.Fallbacks) : plus c'est bas, meilleur est le maillage.</summary>
+    public int Fallbacks;
     public double MeanHeight; // altitude moyenne du chunk (m), pour le calcul du niveau de détail
     public bool Incomplete;   // des données fines étaient encore en téléchargement : à reconstruire
     public int DataVersion;   // version des données au moment de la construction
@@ -44,6 +46,7 @@ public static class ChunkBuilder
     {
         int version = StreamedRaster.DataVersion;
         bool incomplete = false;
+        HeightProvider.Fallbacks = 0;
         // Espacement au sol entre deux sommets (m) : choisit la résolution des données à lire.
         double spacing = size / res * Math.PI / 4 * Geo.Radius;
         int s = res + 3; // grille avec une bordure d'un échantillon (pour les normales)
@@ -170,7 +173,7 @@ public static class ChunkBuilder
         float oz = (float)(center.Z - Math.Floor(center.Z / period) * period);
         var texOff = new float[verts.Length * 3];
         for (int q = 0; q < verts.Length; q++) { texOff[3 * q] = ox; texOff[3 * q + 1] = oy; texOff[3 * q + 2] = oz; }
-        var data = new ChunkData { Geo3 = geo3, Layers = layers, RockSnow = rockSnow, TexOffset = texOff, Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version };
+        var data = new ChunkData { Geo3 = geo3, Layers = layers, RockSnow = rockSnow, TexOffset = texOff, Vertices = verts, Normals = norms, Colors = cols, Indices = idx, Center = center, MeanHeight = sum / (n * n), Incomplete = incomplete, DataVersion = version, Fallbacks = HeightProvider.Fallbacks };
         BuildWater(data, res, s, spacing, size, dirs, wat, sea, surf, hgt, center, centerDir, flip);
         if (spacing <= Vegetation.MaxSpacing) Vegetation.Scatter(data, face, u0, v0, size, res, spacing, hgt, wat, s, center);
         return data;
