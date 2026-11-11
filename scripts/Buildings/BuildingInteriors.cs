@@ -231,7 +231,9 @@ public partial class BuildingInteriors : Node3D
             };
             var fr = b.Frame;
             var mid = (b.DoorA + b.DoorB) * 0.5 + b.DoorOut * 0.06;
-            double h = b.Floor0 + b.DoorH + 0.38;
+            // devanture : au-dessus de l'auvent (sinon caché dessous) ; sinon juste au-dessus de la porte
+            bool shopfront = b.Style is WindowStyle.ShopResidential or WindowStyle.ShopOffice;
+            double h = shopfront ? b.Floor0 + Math.Min(b.LevelH, 3.4) + 0.32 : b.Floor0 + b.DoorH + 0.38;
             var w = fr.C * (Geo.Radius + h) + fr.East * mid.X + fr.North * mid.Y;
             // repère : X le long du mur (de gauche à droite vu de la rue), Y vers le haut, Z vers la rue
             var outw = (fr.East * b.DoorOut.X + fr.North * b.DoorOut.Y).ToVector3().Normalized();
