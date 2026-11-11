@@ -362,6 +362,25 @@ void fragment() {
         vec3 wood = vec3(0.13, 0.10, 0.08) * (0.8 + 0.4 * vnoise(pm * vec2(3.0, 30.0)));
         // au loin, les traverses se fondent en une bande plus sombre au milieu de la voie
         col = mix(col, wood, mix(across * 0.3, sleeper, detail));
+    } else if (kind == 7 || kind == 8) {
+        // accotement en gravier : bord extérieur irrégulier qui se fond dans l'herbe (de près seulement)
+        float outer = kind == 7 ? UV.x : 1.0 - UV.x;   // 0 au bord extérieur, 1 contre la chaussée
+        float stones = vnoise(pm * 18.0) * 0.6 + vnoise(pm * 5.0) * 0.4;
+        col *= mix(1.0, 0.75 + 0.5 * stones, detail);
+        float ragged = vnoise(pm * vec2(1.2, 0.6)) * 0.55 + vnoise(pm * 4.0) * 0.25;
+        if (detail > 0.05 && outer < ragged) discard;
+        col = mix(vec3(0.07, 0.10, 0.04), col, smoothstep(0.0, 0.5, outer - ragged * 0.5));
+    } else if (kind == 9) {
+        // muret de pierres sèches : assises de ~0,35 m, joints décalés, pierres de teintes variées
+        vec2 sp = vec2(ym, xm);
+        float row = floor(sp.y / 0.35);
+        float off = hash(vec2(row, 7.0)) * 0.6;
+        vec2 cell = vec2((sp.x + off) / (0.45 + 0.35 * hash(vec2(row, 3.0))), sp.y / 0.35);
+        vec2 f = fract(cell);
+        float joint = 1.0 - min(smoothstep(0.0, 0.07, min(f.x, 1.0 - f.x)), smoothstep(0.0, 0.1, min(f.y, 1.0 - f.y)));
+        float tint = 0.75 + 0.4 * hash(floor(cell) + row * 13.0);
+        col *= mix(1.0, tint * (0.85 + 0.3 * vnoise(sp * 8.0)) * (1.0 - 0.6 * joint), detail);
+        rough = 0.95;
     } else {
         // rail : acier brillant sur le dessus, rouille sur les côtés
         float top = band(UV.x, 0.5, 0.22, fwidth(UV.x) + 0.001);

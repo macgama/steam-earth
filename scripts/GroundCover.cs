@@ -18,6 +18,8 @@ public partial class GroundCover : Node3D
 {
     public FlyCamera Camera;
     public Atmosphere Atmosphere;
+    /// <summary>Pour la neige réelle au sol (l'herbe disparaît dessous).</summary>
+    public Planet Planet;
 
     /// <summary>Densité de l'herbe (0 = pas d'herbe, 1 = maximum).</summary>
     public float GrassDensity = 0.7f;
@@ -55,6 +57,9 @@ public partial class GroundCover : Node3D
     ShaderMaterial _grassMat;
     StandardMaterial3D _rockMat;
     float _builtDensity = -1;
+    int _blades = 9;
+    float _snow;
+    double _snowAge = 1e9;
 
     public int Cells => _cells.Count;
     public int GrassInstances { get; private set; }
@@ -74,14 +79,19 @@ public partial class GroundCover : Node3D
             if (c.Ready && c.Lat1 >= lat0 && c.Lat0 <= lat1 && c.Lon1 >= lon0 && c.Lon0 <= lon1) _dirty.Add(kv.Key);
         }
     }
-    void OnQuality(QualityProfile q, QualityProfile old) { GrassDensity = q.GrassDensity; Distance = q.GrassDistance; }
+    void OnQuality(QualityProfile q, QualityProfile old)
+    {
+        GrassDensity = q.GrassDensity; Distance = q.GrassDistance;
+        int blades = Math.Max(q.GrassBlades, 5);
+        if (blades != _blades) { _blades = blades; if (_grassMat != null) _tuft = MakeTuft(); _builtDensity = -1; }
+    }
 
     public override void _Ready()
     {
+        _grassMat = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/grass.gdshader") };
         OnQuality(GraphicsQuality.Current, null);
         GraphicsQuality.Changed += OnQuality;
         Obstacles.ClearingsChanged += OnClearings;
-        _grassMat = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/grass.gdshader") };
         _rockMat = new StandardMaterial3D { VertexColorUseAsAlbedo = true, Roughness = 0.95f };
         _tuft = MakeTuft();
         var sphere = new SphereMesh { Radius = 0.5f, Height = 0.7f, RadialSegments = 7, Rings = 4 };
@@ -93,24 +103,27 @@ public partial class GroundCover : Node3D
         _rock = rock;
     }
 
-    /// <summary>Trois quads croisés de 1 m de haut (mis à l'échelle par instance), plus sombres au pied.</summary>
+    /// <summary>Une touffe de brins fins de 1 m de haut (mis à l'échelle par instance), plus sombres au pied.
+    /// Le nombre de brins dépend de la qualité (9 en Moyen … 18 en Ultra) : plus il y en a, plus ils sont fins.</summary>
     Mesh MakeTuft()
     {
         var st = new SurfaceTool();
         st.Begin(Mesh.PrimitiveType.Triangles);
         var dark = new Color(0.35f, 0.45f, 0.30f);
         var light = new Color(1.0f, 1.0f, 0.85f);
-        // une touffe = 9 brins fins et pointus, inclinés vers l'extérieur (repère : rayon ~0,15, hauteur 1)
+        // une touffe = des brins fins et pointus, inclinés vers l'extérieur (repère : rayon ~0,15, hauteur 1)
         var rnd = new Random(7);
-        for (int k = 0; k < 9; k++)
+        int blades = _blades;
+        float bladeW = 0.035f * Mathf.Sqrt(9f / blades);
+        for (int k = 0; k < blades; k++)
         {
-            float a = k * Mathf.Tau / 9 + (float)rnd.NextDouble() * 0.6f;
+            float a = k * Mathf.Tau / blades + (float)rnd.NextDouble() * 0.6f;
             var outDir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
             var side = new Vector3(-outDir.Z, 0, outDir.X);
             var root = outDir * (0.02f + 0.08f * (float)rnd.NextDouble());
             float hb = 0.6f + 0.4f * (float)rnd.NextDouble();
             float lean = 0.15f + 0.3f * (float)rnd.NextDouble();
-            float w = 0.035f;
+            float w = bladeW;
             var mid = root + outDir * lean * 0.35f + Vector3.Up * hb * 0.55f;
             var tip = root + outDir * lean + Vector3.Up * hb;
             var n = (outDir * 0.3f + Vector3.Up).Normalized();
@@ -162,6 +175,14 @@ public partial class GroundCover : Node3D
             float sp = Math.Max(w.Wind10Speed, 0.01f);
             _grassMat.SetShaderParameter("wind_dir", new Vector2(w.Wind10East / sp, -w.Wind10North / sp));
             _grassMat.SetShaderParameter("fade_distance", radius);
+        }
+        // Neige réelle sous le joueur : l'herbe s'enfonce dessous et ses pointes blanchissent
+        _snowAge += delta;
+        if (Planet != null && _snowAge > 5)
+        {
+            _snowAge = 0;
+            _snow = Planet.SnowCover(lat, lon, player.Length() - Geo.Radius - agl);
+            _grassMat.SetShaderParameter("snow_cover", _snow);
         }
 
         // Densité changée (qualité) : tout reconstruire
@@ -218,10 +239,11 @@ public partial class GroundCover : Node3D
     {
         _building++;
         float density = GrassDensity;
+        int season = Vegetation.Season((item.Lat0 + item.Lat1) / 2, Atmosphere?.GameUtc ?? DateTime.UtcNow);
         Task.Run(() =>
         {
             Built b = null;
-            try { b = Scatter(key.Item1, key.Item2, dLat, dLon, item.Origin, density); }
+            try { b = Scatter(key.Item1, key.Item2, dLat, dLon, item.Origin, density, season); }
             catch (Exception e) { GD.PrintErr("[GroundCover] " + e.Message); }
             _done.Enqueue((key, item, b ?? new Built { Grass = Array.Empty<Transform3D>(), Rocks = Array.Empty<Transform3D>() }));
         });
@@ -235,7 +257,16 @@ public partial class GroundCover : Node3D
     }
     static float Rand(ref uint s) { s = s * 1664525u + 1013904223u; return (s >> 8) / 16777216f; }
 
-    static Built Scatter(int ci, int cj, double dLat, double dLon, Vec3d origin, float density)
+    /// <summary>Couleur de l'herbe selon la saison (0 été, 1 automne, 2 hiver, 3 printemps).</summary>
+    static Color Seasonal(Color c, int season) => season switch
+    {
+        1 => c.Lerp(new Color(0.30f, 0.26f, 0.11f), 0.45f),   // automne : l'herbe jaunit
+        2 => c.Lerp(new Color(0.25f, 0.23f, 0.14f), 0.65f),   // hiver : paille terne
+        3 => new Color(c.R * 0.95f, c.G * 1.18f, c.B * 0.9f), // printemps : vert tendre
+        _ => c,
+    };
+
+    static Built Scatter(int ci, int cj, double dLat, double dLon, Vec3d origin, float density, int season)
     {
         var grass = new List<Transform3D>(); var gt = new List<Color>();
         var rocks = new List<Transform3D>(); var rt = new List<Color>();
@@ -301,6 +332,7 @@ public partial class GroundCover : Node3D
                     _ => new Color(0.16f, 0.26f, 0.07f),
                 };
                 float v = 0.8f + r3 * 0.4f;
+                tint = Seasonal(tint, season);
                 gt.Add(new Color(tint.R * v, tint.G * v, tint.B * v));
             }
             else
