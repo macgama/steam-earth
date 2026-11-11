@@ -306,7 +306,9 @@ dans `user://cache/overture/`.
   en tirets) sur les grandes routes, pavés, chemins de gravier avec bande d'herbe, sentiers en terre ; voies ferrées
   en ballast clair avec traverses tous les 0,6 m et rails en acier brillant, trams noyés dans la chaussée.
   Les **ponts** sont tendus
-  entre leurs culées, les **tunnels** et voies souterraines ne sont pas dessinés. Au-delà, jusqu'à ~20–60 km : tuiles
+  entre leurs culées et dessinés comme des ouvrages en béton (tablier épais, parapets, piles jusqu'au sol tous les
+  ~25 m). Aux carrefours, les lignes blanches s'estompent ; en ville, pas d'accotements ni de murets ; les bretelles
+  n'ont pas de ligne médiane. Les **tunnels** et voies souterraines ne sont pas dessinés. Au-delà, jusqu'à ~20–60 km : tuiles
   de zoom 12 en lignes fines, masquées là où le détail est chargé.
 - `PlacesLayer.cs` : noms des localités (villes, villes moyennes, villages, hameaux), en français quand OSM le connaît
   (Genève, Lucerne, Munich…). Plus le lieu est petit, plus il faut s'approcher : hameaux à 4 km, villages à 12 km,

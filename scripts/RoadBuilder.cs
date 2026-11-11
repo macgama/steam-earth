@@ -35,7 +35,7 @@ public sealed class RoadMeshData
 /// </summary>
 public static class RoadBuilder
 {
-    public static readonly HashSet<string> Keys = new() { "id", "subtype", "class", "road_flags", "level_rules", "width_rules" };
+    public static readonly HashSet<string> Keys = new() { "id", "subtype", "class", "road_flags", "level_rules", "width_rules", "subclass" };
 
     /// <summary>Largeur (m), couleur (sRGB), priorité d'affichage (les grandes routes passent dessus).</summary>
     readonly record struct Style(float Width, Color Color, int Priority, Surface Kind, bool Rail = false);
@@ -45,12 +45,15 @@ public static class RoadBuilder
         /// <summary>Accotement en gravier : bord extérieur à gauche (UV.x = 0) ou à droite (UV.x = 1), fondu dans l'herbe.</summary>
         ShoulderLeft = 7, ShoulderRight = 8,
         /// <summary>Muret de pierre (talus ou remblai) : UV.x = hauteur (m), UV.y = longueur (m).</summary>
-        StoneWall = 9 }
+        StoneWall = 9,
+        /// <summary>Béton des ponts (bords du tablier, sous-face, piles) : UV.x = hauteur (m), UV.y = longueur (m).</summary>
+        Concrete = 10 }
 
     static readonly Color Asphalt = new(0.40f, 0.40f, 0.42f), AsphaltLight = new(0.48f, 0.48f, 0.49f);
     static readonly Color Gravel = new(0.62f, 0.56f, 0.45f), Dirt = new(0.55f, 0.45f, 0.32f);
     static readonly Color Paved = new(0.60f, 0.58f, 0.55f), Ballast = new(0.64f, 0.60f, 0.54f);
     static readonly Color Shoulder = new(0.52f, 0.49f, 0.43f), Stone = new(0.55f, 0.53f, 0.49f);
+    static readonly Color Concrete = new(0.66f, 0.65f, 0.62f);
 
     static Style? StyleFor(string subtype, string cls)
     {
@@ -86,6 +89,8 @@ public static class RoadBuilder
     // personnage roulent sur le relief, une chaussée trop haute leur couperait les roues (le shader rapproche déjà
     // les rubans de la caméra pour qu'ils restent visibles au-dessus d'un relief plus grossier).
     const float Lift = 0.05f, LiftPerPriority = 0.02f;
+    /// <summary>Passants : distance (m) entre le bord de la chaussée et la ligne où ils marchent.</summary>
+    const double SidewalkOffset = 0.9;
     const double MinBridgeClearance = 2; // m : en dessous, un pont est posé au sol (le relief ne montre pas le creux)
 
     // --- Règles Overture (« between » = portion de la longueur du tronçon complet) ---
@@ -171,11 +176,14 @@ public static class RoadBuilder
         var g = new Geom(verts, norms, cols, uvs, uv2s, idx);
         var tunnels = new List<Range>(); var bridges = new List<Range>();
         bool incomplete = false;
+        var junctions = Junctions.Of(segments, z, x, y);
 
         foreach (var f in segments)
         {
             var st = StyleFor(f.Str("subtype"), f.Str("class"));
             if (st == null || f.Parts.Count == 0) continue;
+            // bretelles (« link ») : pas de ligne médiane, souvent de simples voies de raccordement
+            var kind = st.Value.Kind == Surface.MarkedAsphalt && f.Str("subclass") == "link" ? Surface.Asphalt : st.Value.Kind;
             tunnels.Clear(); bridges.Clear();
             ParseRules(f, out bool under, tunnels, bridges, out double w);
             if (under) continue;
@@ -208,41 +216,57 @@ public static class RoadBuilder
                 data.Segments++;
                 var line = BuildLine(part, z, x, y, offset, total, tunnels, bridges, decks, spacing, Math.Clamp(spacing * 2, 2, 8), ref incomplete);
                 float lift = Lift + style.Priority * LiftPerPriority;
-                foreach (var run in line)
-                {
-                    Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
-                    // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
-                    Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
-                    // passants : bord des rues (pas sur les autoroutes ni les voies ferrées), milieu des chemins
-                    if (!style.Rail && style.Priority < 6 && run.Count >= 2)
+                foreach (var full in line)
+                    foreach (var (run, onBridge) in Sections(full))
                     {
-                        string cls = f.Str("class");
-                        bool foot = style.Priority == 0 || cls is "pedestrian" or "living_street";
-                        var pts = new Vec3d[run.Count];
-                        for (int k = 0; k < run.Count; k++) pts[k] = run[k].dir * (Geo.Radius + run[k].h);
-                        data.Walks.Add(new Population.Walkway(pts, foot ? width * 0.22 : width / 2 + 0.9, foot));
+                        // marquages estompés aux carrefours (ils se chevaucheraient d'une voie à l'autre)
+                        float[] mark = null;
+                        if (kind == Surface.MarkedAsphalt)
+                        {
+                            mark = new float[run.Count];
+                            for (int i = 0; i < run.Count; i++)
+                                mark[i] = (float)Math.Clamp((junctions.Nearest(run[i].dir, 14) - 6) / 6, 0, 1);
+                        }
+                        Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, kind, g, mark);
+                        // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
+                        Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
+                        // passants : bord des rues (pas sur les autoroutes ni les voies ferrées), milieu des chemins
+                        if (!style.Rail && style.Priority < 6 && run.Count >= 2)
+                        {
+                            string cls = f.Str("class");
+                            bool foot = style.Priority == 0 || cls is "pedestrian" or "living_street";
+                            var pts = new Vec3d[run.Count];
+                            for (int k = 0; k < run.Count; k++) pts[k] = run[k].dir * (Geo.Radius + run[k].h);
+                            data.Walks.Add(new Population.Walkway(pts, foot ? width * 0.22 : width / 2 + SidewalkOffset, foot));
+                        }
+                        if (onBridge)
+                            BridgeStructure(run, data.Origin, width / 2, lift, g);
+                        else
+                        {
+                            // En ville (carrefours rapprochés) : ni accotements en gravier ni murets, la rue est bordée de trottoirs
+                            bool urban = junctions.Count(run[run.Count / 2].dir, 80) >= 10;
+                            // Accotements en gravier des routes goudronnées (bord extérieur fondu dans l'herbe)
+                            float shoulder = 0;
+                            if (!urban && !style.Rail && style.Kind is Surface.MarkedAsphalt or Surface.Asphalt && q.RoadShoulder > 0)
+                            {
+                                shoulder = q.RoadShoulder * (style.Priority >= 3 ? 1f : 0.6f);
+                                Ribbon(run, data.Origin, -width / 2 - shoulder, -width / 2, Lift, Shoulder, Surface.ShoulderLeft, g);
+                                Ribbon(run, data.Origin, width / 2, width / 2 + shoulder, Lift, Shoulder, Surface.ShoulderRight, g);
+                            }
+                            // Murets de pierre là où la route entaille la pente (amont) ou passe sur un remblai (aval)
+                            if (!urban && q.RoadWalls && !style.Rail && style.Priority >= 1)
+                                SideWalls(run, data.Origin, width / 2 + shoulder + 0.1, spacing, lift, g, ref incomplete);
+                        }
+                        if (style.Rail)
+                        {
+                            // deux rails en acier, un peu surélevés (sur les traverses)
+                            var steel = new Color(0.62f, 0.62f, 0.65f);
+                            float gauge = width > 3.3f ? 0.72f : 0.5f; // demi-écartement (voie normale / métrique)
+                            float top = lift + (style.Kind == Surface.Ballast ? 0.18f : 0.03f);
+                            Ribbon(run, data.Origin, -gauge - 0.08f, -gauge + 0.08f, top, steel, Surface.Steel, g);
+                            Ribbon(run, data.Origin, gauge - 0.08f, gauge + 0.08f, top, steel, Surface.Steel, g);
+                        }
                     }
-                    // Accotements en gravier des routes goudronnées (bord extérieur fondu dans l'herbe)
-                    float shoulder = 0;
-                    if (!style.Rail && style.Kind is Surface.MarkedAsphalt or Surface.Asphalt && q.RoadShoulder > 0)
-                    {
-                        shoulder = q.RoadShoulder * (style.Priority >= 3 ? 1f : 0.6f);
-                        Ribbon(run, data.Origin, -width / 2 - shoulder, -width / 2, Lift, Shoulder, Surface.ShoulderLeft, g);
-                        Ribbon(run, data.Origin, width / 2, width / 2 + shoulder, Lift, Shoulder, Surface.ShoulderRight, g);
-                    }
-                    // Murets de pierre là où la route entaille la pente (amont) ou passe sur un remblai (aval)
-                    if (q.RoadWalls && !style.Rail && style.Priority >= 1)
-                        SideWalls(run, data.Origin, width / 2 + shoulder + 0.1, spacing, lift, g, ref incomplete);
-                    if (style.Rail)
-                    {
-                        // deux rails en acier, un peu surélevés (sur les traverses)
-                        var steel = new Color(0.62f, 0.62f, 0.65f);
-                        float gauge = width > 3.3f ? 0.72f : 0.5f; // demi-écartement (voie normale / métrique)
-                        float top = lift + (style.Kind == Surface.Ballast ? 0.18f : 0.03f);
-                        Ribbon(run, data.Origin, -gauge - 0.08f, -gauge + 0.08f, top, steel, Surface.Steel, g);
-                        Ribbon(run, data.Origin, gauge - 0.08f, gauge + 0.08f, top, steel, Surface.Steel, g);
-                    }
-                }
             }
         }
         data.Vertices = verts.ToArray(); data.Normals = norms.ToArray(); data.Colors = cols.ToArray(); data.Indices = idx.ToArray();
@@ -253,6 +277,81 @@ public static class RoadBuilder
 
     readonly record struct Geom(List<Vector3> Verts, List<Vector3> Norms, List<Color> Cols, List<Vector2> Uvs, List<Vector2> Uv2s, List<int> Idx);
 
+    /// <summary>Découpe une suite de points en portions au sol / sur un pont (le point de jonction appartient aux deux).</summary>
+    static IEnumerable<(List<Pt> run, bool bridge)> Sections(List<Pt> run)
+    {
+        int start = 0;
+        for (int i = 2; i <= run.Count; i++) // segment (i-1, i) : même portion que le précédent ?
+        {
+            if (i < run.Count && SegBridge(i) == SegBridge(start + 1)) continue;
+            yield return (run.GetRange(start, i - start), SegBridge(start + 1));
+            start = i - 1;
+        }
+        // un segment est « sur le pont » si ses deux extrémités le sont
+        bool SegBridge(int k) => k < run.Count && run[k - 1].bridge && run[k].bridge;
+    }
+
+    /// <summary>Extrémités des voies carrossables d'une tuile (carrefours, raccords), indexées par cases de 20 m.</summary>
+    sealed class Junctions
+    {
+        const double Cell = 20;
+        readonly Dictionary<(long, long, long), List<Vec3d>> _cells = new();
+
+        public static Junctions Of(List<Mvt.Feature> segments, int z, int x, int y)
+        {
+            var j = new Junctions();
+            foreach (var f in segments)
+            {
+                var st = StyleFor(f.Str("subtype"), f.Str("class"));
+                if (st == null || st.Value.Rail || st.Value.Priority < 1) continue;
+                foreach (var p in f.Parts)
+                {
+                    if (p.Length < 4) continue;
+                    if (InTile(p[0], p[1])) j.Add(Dir(z, x, y, p[0], p[1]) * Geo.Radius);
+                    if (InTile(p[^2], p[^1])) j.Add(Dir(z, x, y, p[^2], p[^1]) * Geo.Radius);
+                }
+            }
+            return j;
+        }
+
+        static (long, long, long) Key(Vec3d p) => ((long)Math.Floor(p.X / Cell), (long)Math.Floor(p.Y / Cell), (long)Math.Floor(p.Z / Cell));
+
+        void Add(Vec3d p)
+        {
+            var k = Key(p);
+            if (!_cells.TryGetValue(k, out var l)) _cells[k] = l = new List<Vec3d>();
+            l.Add(p);
+        }
+
+        IEnumerable<Vec3d> Around(Vec3d p, double r)
+        {
+            var (kx, ky, kz) = Key(p);
+            int c = (int)Math.Ceiling(r / Cell);
+            for (long a = -c; a <= c; a++) for (long b = -c; b <= c; b++) for (long d = -c; d <= c; d++)
+                if (_cells.TryGetValue((kx + a, ky + b, kz + d), out var l))
+                    foreach (var q in l) if ((q - p).Length() <= r) yield return q;
+        }
+
+        /// <summary>Distance (m) à l'extrémité de voie la plus proche, plafonnée à <paramref name="max"/>.</summary>
+        public double Nearest(Vec3d dir, double max)
+        {
+            var p = dir * Geo.Radius;
+            double best = max;
+            foreach (var q in Around(p, max)) best = Math.Min(best, (q - p).Length());
+            return best;
+        }
+
+        public int Count(Vec3d dir, double r)
+        {
+            int n = 0;
+            foreach (var _ in Around(dir * Geo.Radius, r)) n++;
+            return n;
+        }
+    }
+
+    /// <summary>Point d'une voie posée : direction, hauteur de la chaussée, hauteur du sol, sur un tablier de pont.</summary>
+    readonly record struct Pt(Vec3d dir, double h, double ground, bool bridge);
+
     static bool InTile(double fx, double fy) => fx > 0.0005 && fx < 0.9995 && fy > 0.0005 && fy < 0.9995;
 
     static Color Shade(Color c, float k) => new(c.R * k, c.G * k, c.B * k);
@@ -261,7 +360,7 @@ public static class RoadBuilder
     /// <param name="offset">distance (m) entre le début du tronçon complet et le début de ce morceau</param>
     /// <param name="total">longueur du tronçon complet (m) ; 0 = ce morceau seul</param>
     /// <param name="decks">hauteur des culées de chaque pont (même ordre que <paramref name="bridges"/>)</param>
-    static List<List<(Vec3d dir, double h)>> BuildLine(double[] part, int z, int x, int y, double offset, double total,
+    static List<List<Pt>> BuildLine(double[] part, int z, int x, int y, double offset, double total,
         List<Range> tunnels, List<Range> bridges, (double a, double b)[] decks, double spacing, double step, ref bool incomplete)
     {
         int n = part.Length / 2;
@@ -292,6 +391,7 @@ public static class RoadBuilder
         }
         var heights = new double[pts.Count];
         for (int i = 0; i < pts.Count; i++) heights[i] = Ground(pts[i].dir, spacing, ref incomplete);
+        var ground = (double[])heights.Clone();
 
         // Ponts : tablier droit entre les deux culées (au-dessus de l'eau ou de la vallée). Les hauteurs des culées
         // sont calculées une fois pour le tronçon entier : les morceaux voisins se raccordent.
@@ -319,13 +419,13 @@ public static class RoadBuilder
             }
         }
 
-        var runs = new List<List<(Vec3d, double)>>();
-        List<(Vec3d, double)> cur = null;
+        var runs = new List<List<Pt>>();
+        List<Pt> cur = null;
         for (int i = 0; i < pts.Count; i++)
         {
             if (tunnels.Count > 0 && In(tunnels, pts[i].t)) { cur = null; continue; }
-            if (cur == null) { cur = new List<(Vec3d, double)>(); runs.Add(cur); }
-            cur.Add((pts[i].dir, heights[i]));
+            if (cur == null) { cur = new List<Pt>(); runs.Add(cur); }
+            cur.Add(new Pt(pts[i].dir, heights[i], ground[i], heights[i] - ground[i] > 1.0));
         }
         runs.RemoveAll(r => r.Count < 2);
         return runs;
@@ -524,7 +624,7 @@ public static class RoadBuilder
     }
 
     /// <summary>Découpe le couloir d'une voie en quadrilatères d'une quinzaine de mètres (non bloquants, « Clears »).</summary>
-    static void Clear(List<(Vec3d dir, double h)> run, double half, List<Obstacles.Shape> outList)
+    static void Clear(List<Pt> run, double half, List<Obstacles.Shape> outList)
     {
         int n = run.Count;
         if (n < 2) return;
@@ -533,7 +633,7 @@ public static class RoadBuilder
         {
             int j = i + 1;
             while (j < n - 1 && (run[j].dir - run[i].dir).Length() * Geo.Radius < 15) j++;
-            var (da, ha) = run[i]; var (db, hb) = run[j];
+            var (da, ha, _, _) = run[i]; var (db, hb, _, _) = run[j];
             var t = db - da;
             if (t.Length() > 1e-12)
             {
@@ -555,7 +655,7 @@ public static class RoadBuilder
     /// terrain (remblai : mur tourné vers l'extérieur, du sol jusqu'au bord de la chaussée). Au-delà, c'est un pont
     /// ou une falaise : rien.
     /// </summary>
-    static void SideWalls(List<(Vec3d dir, double h)> run, Vec3d origin, double off, double spacing, float lift, Geom g, ref bool incomplete)
+    static void SideWalls(List<Pt> run, Vec3d origin, double off, double spacing, float lift, Geom g, ref bool incomplete)
     {
         int n = run.Count;
         if (n < 2) return;
@@ -610,27 +710,26 @@ public static class RoadBuilder
         }
     }
 
-    static void Ribbon(List<(Vec3d dir, double h)> run, Vec3d origin, float left, float right, float lift, Color col, Surface kind, Geom g)
+    /// <param name="mark">intensité des marquages par point (0 aux carrefours), dans UV2.y ; null = 1</param>
+    static void Ribbon(List<Pt> run, Vec3d origin, float left, float right, float lift, Color col, Surface kind, Geom g, float[] mark = null)
     {
         var (verts, norms, cols, uvs, uv2s, idx) = (g.Verts, g.Norms, g.Cols, g.Uvs, g.Uv2s, g.Idx);
         int n = run.Count, start = verts.Count;
         col.A = (float)kind / 10f;
-        var uv2 = new Vector2(right - left, 0);
         double along = 0;
         for (int i = 0; i < n; i++)
         {
             var up = run[i].dir;
-            var a = run[Math.Max(i - 1, 0)].dir; var b = run[Math.Min(i + 1, n - 1)].dir;
-            var tangent = (b - a).Normalized();
-            var side = tangent.Cross(up).Normalized(); // vers la droite
+            var (side, miter) = Side(run, i);
             var center = up * (Geo.Radius + run[i].h + lift);
             var nrm = up.ToVector3();
-            verts.Add((center + side * left - origin).ToVector3());
-            verts.Add((center + side * right - origin).ToVector3());
+            verts.Add((center + side * (left * miter) - origin).ToVector3());
+            verts.Add((center + side * (right * miter) - origin).ToVector3());
             norms.Add(nrm); norms.Add(nrm);
             cols.Add(col); cols.Add(col);
             if (i > 0) along += (run[i].dir - run[i - 1].dir).Length() * Geo.Radius;
             uvs.Add(new Vector2(0, (float)along)); uvs.Add(new Vector2(1, (float)along));
+            var uv2 = new Vector2(right - left, mark == null ? 1 : mark[i]);
             uv2s.Add(uv2); uv2s.Add(uv2);
         }
         for (int i = 0; i < n - 1; i++)
@@ -638,6 +737,103 @@ public static class RoadBuilder
             int k = start + 2 * i;
             idx.Add(k); idx.Add(k + 2); idx.Add(k + 1);
             idx.Add(k + 1); idx.Add(k + 2); idx.Add(k + 3);
+        }
+    }
+
+    /// <summary>Direction vers la droite de la voie au point i (bissectrice) et facteur d'onglet : dans un virage, le
+    /// ruban garde sa largeur au lieu de s'étrangler (limité à ×2 dans les épingles).</summary>
+    static (Vec3d side, double miter) Side(List<Pt> run, int i)
+    {
+        int n = run.Count;
+        var up = run[i].dir;
+        var t1 = i > 0 ? (run[i].dir - run[i - 1].dir).Normalized() : (run[1].dir - run[0].dir).Normalized();
+        var t2 = i < n - 1 ? (run[i + 1].dir - run[i].dir).Normalized() : t1;
+        var tangent = (t1 + t2);
+        if (tangent.Length() < 1e-9) tangent = t2;
+        tangent = tangent.Normalized();
+        double cos = Math.Max(tangent.Dot(t1), 0.5);
+        return (tangent.Cross(up).Normalized(), 1 / cos);
+    }
+
+    /// <summary>Quadrilatère a-b-c-d (dans l'ordre du pourtour) dont la face avant regarde vers <paramref name="normal"/>
+    /// (Godot : sommets dans le sens horaire vu de face).</summary>
+    static void Quad(Geom g, Vec3d origin, Vec3d a, Vec3d b, Vec3d c, Vec3d d, Vec3d normal, Color col,
+        Vector2 ua, Vector2 ub, Vector2 uc, Vector2 ud)
+    {
+        int k = g.Verts.Count;
+        var nrm = normal.ToVector3().Normalized();
+        foreach (var (p, uv) in new[] { (a, ua), (b, ub), (c, uc), (d, ud) })
+        {
+            g.Verts.Add((p - origin).ToVector3()); g.Norms.Add(nrm); g.Cols.Add(col);
+            g.Uvs.Add(uv); g.Uv2s.Add(new Vector2(1, 1));
+        }
+        bool flip = (b - a).Cross(c - a).Dot(normal) > 0;
+        if (!flip) { g.Idx.Add(k); g.Idx.Add(k + 1); g.Idx.Add(k + 2); g.Idx.Add(k); g.Idx.Add(k + 2); g.Idx.Add(k + 3); }
+        else { g.Idx.Add(k); g.Idx.Add(k + 2); g.Idx.Add(k + 1); g.Idx.Add(k); g.Idx.Add(k + 3); g.Idx.Add(k + 2); }
+    }
+
+    /// <summary>
+    /// Structure d'un pont sous le tablier (une portion de voie marquée « bridge ») : bords en béton du dessous du
+    /// tablier jusqu'en haut du parapet, sous-face, et piles jusqu'au sol tous les ~25 m là où le vide dépasse 3 m.
+    /// </summary>
+    static void BridgeStructure(List<Pt> run, Vec3d origin, float half, float lift, Geom g)
+    {
+        int n = run.Count;
+        if (n < 2) return;
+        var concrete = Concrete; concrete.A = (float)Surface.Concrete / 10f;
+        const double Thick = 0.9;            // épaisseur du tablier (m)
+        double top = lift + 1.0; // parapet
+        // sous-face
+        Ribbon(run, origin, -half, half, lift - (float)Thick, Concrete, Surface.Concrete, g);
+        var sides = new Vec3d[n]; var miters = new double[n];
+        for (int i = 0; i < n; i++) (sides[i], miters[i]) = Side(run, i);
+        double along = 0;
+        for (int i = 0; i + 1 < n; i++)
+        {
+            double seg = (run[i + 1].dir - run[i].dir).Length() * Geo.Radius;
+            foreach (int s in new[] { -1, 1 })
+            {
+                Vec3d P(int k, double dh) => run[k].dir * (Geo.Radius + run[k].h + dh) + sides[k] * (half * miters[k] * s);
+                float b = (float)-Thick, t = (float)(top - lift);
+                // UV : (hauteur, longueur) comme les murets
+                Quad(g, origin, P(i, lift - Thick), P(i + 1, lift - Thick), P(i + 1, top), P(i, top), sides[i] * s, concrete,
+                    new Vector2(b, (float)along), new Vector2(b, (float)(along + seg)), new Vector2(t, (float)(along + seg)), new Vector2(t, (float)along));
+            }
+            along += seg;
+        }
+        // Piles : murs-piles de béton, perpendiculaires à la voie
+        double total = along, next = Math.Min(12, total / 2);
+        along = 0;
+        for (int i = 0; i + 1 < n; i++)
+        {
+            double seg = (run[i + 1].dir - run[i].dir).Length() * Geo.Radius;
+            while (next <= along + seg && next < total - 6)
+            {
+                double a = (next - along) / Math.Max(seg, 1e-9);
+                var dir = (run[i].dir * (1 - a) + run[i + 1].dir * a).Normalized();
+                double h = run[i].h * (1 - a) + run[i + 1].h * a;
+                double gnd = run[i].ground * (1 - a) + run[i + 1].ground * a;
+                if (h - gnd > 3) Pier(dir, (run[i + 1].dir - run[i].dir).Normalized(), h + lift - Thick, gnd - 0.5);
+                next += 25;
+            }
+            along += seg;
+        }
+
+        void Pier(Vec3d up, Vec3d tangent, double hTop, double hBot)
+        {
+            var side = tangent.Cross(up).Normalized();
+            tangent = up.Cross(side).Normalized();
+            double w = Math.Max(half * 0.7, 0.8), d = 0.6;
+            float hb = (float)(hBot - hTop), ht = 0;
+            var faces = new[] { (side, w, d, tangent), (-side, w, d, -tangent), (tangent, d, w, -side), (-tangent, d, w, side) };
+            foreach (var (nrm, off, ext, dirAlong) in faces)
+            {
+                // face à la distance off dans la direction nrm, large de 2·ext dans la direction dirAlong
+                Vec3d Q(double e, double hh) => up * (Geo.Radius + hh) + nrm * off + dirAlong * e;
+                float L = (float)(2 * ext);
+                Quad(g, origin, Q(-ext, hBot), Q(ext, hBot), Q(ext, hTop), Q(-ext, hTop), nrm, concrete,
+                    new Vector2(hb, 0), new Vector2(hb, L), new Vector2(ht, L), new Vector2(ht, 0));
+            }
         }
     }
 

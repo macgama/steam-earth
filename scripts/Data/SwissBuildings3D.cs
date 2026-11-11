@@ -36,7 +36,11 @@ public static class SwissBuildings3D
                     string root = Path.Combine(OS.GetUserDataDir(), "cache", "swissbuildings3d");
                     _archive = Task.Run(async () =>
                     {
-                        try { return await PmTilesArchive.OpenAsync(Url, root, Path.Combine(root, "tiles")); }
+                        try
+                        {
+                            await DropStaleCache(root);
+                            return await PmTilesArchive.OpenAsync(Url, root, Path.Combine(root, "tiles"));
+                        }
                         catch (Exception e) { GD.PrintErr($"[swissBUILDINGS3D] {e.Message}"); return null; }
                     });
                 }
@@ -45,6 +49,23 @@ public static class SwissBuildings3D
         }
     }
     static long _retryAt;
+
+    /// <summary>L'archive garde la même adresse quand elle est republiée (nouvelle version swisstopo) : son index et
+    /// ses tuiles changent alors de place. En ligne, on compare l'en-tête publié à celui du cache et on vide le cache
+    /// s'il diffère (sinon le jeu lirait des octets au mauvais endroit, et retomberait sur des bâtiments génériques).
+    /// Hors ligne, le cache est gardé tel quel.</summary>
+    static async Task DropStaleCache(string root)
+    {
+        string headPath = Path.Combine(root, "header.bin");
+        if (!File.Exists(headPath)) return;
+        var live = await PmTilesArchive.FetchAsync(Url, 0, 127);
+        if (live == null || live.Length < 127) return;
+        var cached = await File.ReadAllBytesAsync(headPath);
+        if (cached.AsSpan().SequenceEqual(live)) return;
+        GD.Print("[swissBUILDINGS3D] nouvelle version de l'archive : cache vidé");
+        try { Directory.Delete(root, true); }
+        catch (Exception e) { GD.PrintErr($"[swissBUILDINGS3D] cache : {e.Message}"); }
+    }
 
     /// <summary>Emprise grossière de la Suisse et du Liechtenstein (les tuiles absentes de l'archive restent génériques).</summary>
     public static bool Covers(double lat, double lon) => lat > 45.80 && lat < 47.82 && lon > 5.94 && lon < 10.50;

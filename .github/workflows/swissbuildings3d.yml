@@ -8,6 +8,8 @@ name: Bâtiments suisses (swissBUILDINGS3D)
 on:
   workflow_dispatch:
   push:
+    # main seulement : les branches des autres travaux qui contiennent ce fichier ne doivent pas republier l'archive
+    branches: [main]
     paths:
       - tools/swissbuildings3d/VERSION
 
