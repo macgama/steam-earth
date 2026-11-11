@@ -604,5 +604,7 @@ void fragment() {
         }
         if (!FRONT_FACING) EMISSION = vec3(0.55, 0.68, 0.85) * 0.6 * (1.0 - night) * win;
     }
+    // vu de l'intérieur (face arrière) : le mur est éclairé par la pièce, pas par le soleil du dehors
+    if (!FRONT_FACING) EMISSION += ALBEDO * mix(0.55, 0.40, night);
 }";
 }
