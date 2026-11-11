@@ -53,9 +53,17 @@ public sealed class MeshAcc
 
     public int Count => V.Count;
 
+    /// <summary>Matière des sommets ajoutés à partir de maintenant (code <see cref="FacadeMaterials"/>, rangé dans l'alpha
+    /// de la couleur ; 0 = uni, alpha 1).</summary>
+    public byte Material;
+    /// <summary>Faces verticales sans UV données (<see cref="Side"/>) : UV en mètres (longueur, altitude) au lieu de zéro,
+    /// pour que les textures des bâtiments s'y dessinent.</summary>
+    public bool AutoUv;
+
     public void Vert(Vector3 p, Vector3 n, Color c, Vector2 uv, Vector2 uv2)
     {
-        V.Add(p); N.Add(n); C.Add(c); Uv.Add(uv); Uv2.Add(uv2);
+        V.Add(p); N.Add(n); C.Add(Material == 0 ? c : FacadeMaterials.Encode(c, Material));
+        Uv.Add(uv); Uv2.Add(uv2);
     }
 
     /// <summary>Quadrilatère plan (a, b, c, d dans l'ordre) de normale <paramref name="n"/>.</summary>
@@ -108,7 +116,8 @@ public sealed class MeshAcc
     {
         var d = (b - a).Normalized.Right;
         var n = fr.Dir(d.X, d.Y, 0);
-        var ua = uvA0 ?? Vector2.Zero; var ub = uvB1 ?? Vector2.Zero;
+        var ua = uvA0 ?? (AutoUv ? new Vector2(0, (float)h0) : Vector2.Zero);
+        var ub = uvB1 ?? (AutoUv ? new Vector2((float)Poly2.Dist(a, b), (float)h1) : Vector2.Zero);
         Quad(fr.P(a, h0), fr.P(b, h0), fr.P(b, h1), fr.P(a, h1), n, col,
             new Vector2(ua.X, ua.Y), new Vector2(ub.X, ua.Y), new Vector2(ub.X, ub.Y), new Vector2(ua.X, ub.Y), uv2);
     }

@@ -104,6 +104,7 @@ public static partial class BuildingBuilder
         public List<(double[] ring, string cls)> LandUse;
         public int LandZ, LandX, LandY;
         public bool Incomplete;
+        public int Detail;           // QualityProfile.BuildingDetail lu au début de la construction (balcons à partir de 1)
     }
 
     const int GridN = 48;
@@ -119,7 +120,9 @@ public static partial class BuildingBuilder
         {
             Z = z, Tx = tx, Ty = ty, Spacing = spacing, Data = data, M = new MeshAcc(), Obs = new(),
             Grid = new(), Parents = new(), LandUse = new(), LandZ = landZ, LandX = landX, LandY = landY,
+            Detail = GraphicsQuality.Current.BuildingDetail,
         };
+        ctx.M.AutoUv = true; // tours, minarets : textures en mètres
         bool hasSwiss = swiss != null && swiss.Count > 0;
         data.Swiss = hasSwiss;
         if ((mvt != null && mvt.Length > 0) || hasSwiss)
@@ -408,6 +411,7 @@ public static partial class BuildingBuilder
     {
         var f = cd.F; bool isPart = cd.IsPart;
         var m = ctx.M;
+        m.Material = 0;
         // Une partie de bâtiment hérite de la classe et du nom du bâtiment
         Mvt.Feature parent = null;
         if (isPart) { var bid = f.Str("building_id"); if (bid != null) ctx.Parents.TryGetValue(bid, out parent); }
@@ -477,6 +481,10 @@ public static partial class BuildingBuilder
         var roof = RoofColor(f, shape, pitched, kind, seed);
         var style = height >= 3.5 && footprint >= 20 ? BuildingKinds.Windows(kind, shopfront, height, footprint) : WindowStyle.None;
         var uv2 = new Vector2((float)style, (float)seed);
+        // Matières (crépi, bois de chalet, tuiles…), volets et balcons : d'après OSM, sinon la région et l'altitude
+        var look = FacadeMaterials.Choose(f.Str("facade_material"), f.Str("roof_material"), f.Str("facade_color") != null,
+            f.Str("roof_color") != null, kind, style, pitched, clat, clon, gmin, levels, footprint, height, seed, wall, roof);
+        wall = look.WallColor; roof = look.RoofColor;
 
         // Porte d'entrée (bâtiments où l'on peut entrer) : sur un mur qui donne dehors, le plus près du niveau du sol
         bool enterable = BuildingKinds.Enterable(kind) && footprint >= 16 && footprint <= 40_000 && ext.Count <= 160
@@ -497,6 +505,8 @@ public static partial class BuildingBuilder
             if (doorEdge < 0) enterable = false;
         }
 
+        m.Material = look.WallCode;
+
         // Collisions : contour extérieur et cours intérieures ; toit à pans réglé par PitchedRoof
         Vec3d[][] holeRings = null;
         if (holes.Count > 0) { holeRings = new Vec3d[holes.Count][]; for (int i = 0; i < holes.Count; i++) holeRings[i] = fr.World(holes[i]); }
@@ -506,8 +516,35 @@ public static partial class BuildingBuilder
         bool stadiumBowl = kind is BuildingKind.Stadium && holes.Count > 0 && footprint > 2000;
         if (plinth)
         {
-            // le socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
-            Walls(ext, baseH, floor0, map, PlinthColor(wall, seed), Vector2.Zero, fr, m, -1, 0, 0, 0, 0);
+            double drop = floor0 - gmin;
+            if (drop >= 2.3 && style != WindowStyle.None && !isPart)
+            {
+                // Grand socle : comme les vraies maisons en pente, c'est un étage habitable maçonné (sous-sol côté aval)
+                // avec ses fenêtres, et souvent une porte de garage au niveau de la route d'en bas
+                int nb = Math.Max(1, (int)Math.Floor(drop / 2.5));
+                var low = new WallMap(gmin, drop / nb);
+                var basementStyle = style is WindowStyle.ShopResidential or WindowStyle.Glass ? WindowStyle.Residential
+                    : style is WindowStyle.ShopOffice ? WindowStyle.Office : style;
+                var mat = look.Wall switch
+                {
+                    FacadeSurface.Stone or FacadeSurface.Brick or FacadeSurface.Concrete => look.Wall,
+                    FacadeSurface.Metal => FacadeSurface.Concrete,
+                    _ => FacadeSurface.Render,
+                };
+                var col = look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood or FacadeSurface.Siding or FacadeSurface.TimberFrame or FacadeSurface.Metal
+                    ? (seed < 0.5 ? new Color(0.88f, 0.86f, 0.80f) : new Color(0.80f, 0.79f, 0.75f)) : wall;
+                m.Material = FacadeMaterials.Code(mat, look.Shutters);
+                Walls(ext, baseH, floor0, low, col, new Vector2((float)basementStyle, (float)seed), fr, m, -1, 0, 0, 0, 0);
+                if (kind is BuildingKind.House or BuildingKind.Apartments or BuildingKind.Generic or BuildingKind.Farm or BuildingKind.Hotel)
+                    GarageDoor(ext, cd, fr, ctx, floor0, seed, kind == BuildingKind.Apartments, m);
+            }
+            else
+            {
+                // petit socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
+                m.Material = FacadeMaterials.Code(look.Wall is FacadeSurface.Concrete or FacadeSurface.Metal ? FacadeSurface.Concrete : FacadeSurface.Stone);
+                Walls(ext, baseH, floor0, map, PlinthColor(look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? new Color(0.80f, 0.78f, 0.72f) : wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
+            }
+            m.Material = look.WallCode;
             Walls(ext, floor0, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
         }
         else Walls(ext, baseH, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
@@ -520,10 +557,11 @@ public static partial class BuildingBuilder
         else
         {
             foreach (var h in holes) Walls(h, baseH, eave, map, wall, uv2, fr, m, -1, 0, 0, 0, 0);
-            if (pitched) PitchedRoof(box, boxLong >= boxShort, f.Str("roof_orientation") == "across", shape, eave, roofH, roof, wall, map, uv2, fr, m, solid);
-            else FlatRoof(ext, holes, eave, roof, fr, m);
+            if (pitched) PitchedRoof(box, boxLong >= boxShort, f.Str("roof_orientation") == "across", shape, eave, roofH, roof, wall, map, uv2, fr, m, solid, look);
+            else FlatRoof(ext, holes, eave, roof, fr, m, look.RoofCode, seed);
         }
 
+        m.Material = 0;
         // Signes distinctifs selon la fonction (seulement pour les contours simples, sans parties 3D détaillées)
         if (!isPart && obox != null && fill > 0.55)
         {
@@ -534,8 +572,13 @@ public static partial class BuildingBuilder
         {
             double r = Math.Min(boxShort, boxLong) * 0.45;
             var ctr = (obox[0] + obox[2]) * 0.5;
+            m.Material = 0;
             if (r > 1) m.Dome(fr, ctr, r, eave, r * (shape == "onion" ? 1.3 : 0.8), roof);
         }
+        // Balcons (Moyen et plus) : bois sur les chalets, garde-corps métalliques sur les immeubles
+        if (ctx.Detail >= 1 && look.Balconies != BalconyKind.None && !isPart && levels >= 2 && minH <= 0)
+            Balconies(ext, cd, fr, ctx, floor0, levelH, levels, seed, look, m);
+        m.Material = 0;
         if (shopfront) Awnings(ext, cd, fr, ctx, floor0, levelH, seed, doorEdge, m);
 
         // Porte (battant fermé, effacé par le shader quand le joueur s'approche : l'intérieur prend le relais)
@@ -629,6 +672,42 @@ public static partial class BuildingBuilder
                 or BuildingKind.Library or BuildingKind.Museum => 12 + 6 * seed,
             _ => area > 800 ? 9 + 6 * seed : 6 + 4 * seed,
         };
+    }
+
+    /// <summary>Porte de garage (sectionnelle, à lames horizontales) dans le socle, sur le mur le plus bas : là où une
+    /// route passe en contrebas. Deux portes côte à côte sur les longues façades d'immeubles.</summary>
+    static void GarageDoor(List<V2> ext, Cand cd, in LocalFrame fr, Ctx ctx, double floor0, double seed, bool block, MeshAcc m)
+    {
+        int best = -1; double bestG = double.MaxValue;
+        for (int i = 0; i < ext.Count; i++)
+        {
+            var a = ext[i]; var b = ext[(i + 1) % ext.Count];
+            double len = Poly2.Dist(a, b);
+            if (len < 3.4) continue;
+            var n = ((b - a) * (1 / len)).Right;
+            var mid = (a + b) * 0.5;
+            ToTile(fr, mid + n * 1.5, ctx, out double x, out double y);
+            if (At(ctx, x, y, cd) != null) continue; // mur mitoyen
+            fr.LatLon(mid + n * 1.5, out double la, out double lo);
+            double g = Ground(la, lo, ctx);
+            if (g < bestG) { bestG = g; best = i; }
+        }
+        if (best < 0 || floor0 - bestG < 2.5) return;
+        var A = ext[best]; var B = ext[(best + 1) % ext.Count];
+        double L = Poly2.Dist(A, B);
+        var d = (B - A) * (1 / L); var nn = d.Right;
+        int count = block && L > 8 ? 2 : 1;
+        double w = 2.5, gap = 0.6, total = count * w + (count - 1) * gap;
+        double start = (L - total) * (0.35 + 0.3 * Hash(seed * 17.3));
+        var cols = new[] { new Color(0.62f, 0.63f, 0.64f), new Color(0.40f, 0.27f, 0.17f), new Color(0.86f, 0.86f, 0.84f), new Color(0.32f, 0.34f, 0.36f) };
+        var col = cols[(int)(Hash(seed * 7.7) * cols.Length) % cols.Length];
+        m.Material = FacadeMaterials.Code(FacadeSurface.Siding);
+        for (int k = 0; k < count; k++)
+        {
+            double t0 = start + k * (w + gap);
+            var p0 = A + d * t0 + nn * 0.03; var p1 = A + d * (t0 + w) + nn * 0.03;
+            m.Side(fr, p0, p1, bestG - 0.3, bestG + 2.15, col, new Vector2(0, (float)seed), new Vector2(0, 0), new Vector2((float)w, 2.45f));
+        }
     }
 
     /// <summary>Socle sous le rez-de-chaussée : pierre grise (ou béton) un peu plus sombre que la façade.</summary>
@@ -734,20 +813,25 @@ public static partial class BuildingBuilder
         m.Side(fr, a, b, h0, h1, col, uv2, new Vector2((float)s0, map.V(h0)), new Vector2((float)s1, map.V(h1)));
     }
 
-    static void FlatRoof(List<V2> ext, List<List<V2>> holes, double h, Color col, in LocalFrame fr, MeshAcc m)
+    static void FlatRoof(List<V2> ext, List<List<V2>> holes, double h, Color col, in LocalFrame fr, MeshAcc m, byte material = 0, double seed = 0)
     {
         var pts = new List<V2>();
         var tris = Poly2.Triangulate(ext, holes, pts);
         int k = m.Count;
         var up = fr.Up;
-        foreach (var p in pts) m.Vert(fr.P(p, h), up, col, Vector2.Zero, Vector2.Zero);
+        byte keep = m.Material;
+        m.Material = material;
+        var uv2 = new Vector2(0, (float)seed);
+        foreach (var p in pts) m.Vert(fr.P(p, h), up, col, new Vector2((float)p.X, (float)-p.Y), uv2);
         foreach (var t in tris) m.I.Add(k + t);
+        m.Material = keep;
     }
 
     /// <summary>Toit à deux pans (pignons) ou à quatre pans sur le rectangle englobant, avec un léger débord.</summary>
     static void PitchedRoof(V2[] box, bool firstIsLong, bool across, string shape, double eave, double roofH,
-        Color col, Color wall, WallMap map, Vector2 wallUv2, in LocalFrame fr, MeshAcc m, Obstacles.Shape solid)
+        Color col, Color wall, WallMap map, Vector2 wallUv2, in LocalFrame fr, MeshAcc m, Obstacles.Shape solid, BuildingLook look)
     {
+        var roofUv2 = new Vector2(0, wallUv2.Y);
         // box : A, B, C, D (sens direct), AB parallèle au grand côté si firstIsLong
         var A = box[0]; var B = box[1]; var C = box[2]; var D = box[3];
         if (!firstIsLong ^ across) { (A, B, C, D) = (B, C, D, A); } // le faîte suit AB
@@ -771,20 +855,23 @@ public static partial class BuildingBuilder
             r1 = new V2(mid1.X + ux * inset, mid1.Y + uy * inset);
             r2 = new V2(mid2.X - ux * inset, mid2.Y - uy * inset);
         }
-        if (shape == "skillion") { Skillion(A, B, C, D, low, ridge, col, wall, fr, m); return; }
+        if (shape == "skillion") { Skillion(A, B, C, D, low, ridge, col, wall, fr, m, look, roofUv2); return; }
         // Collisions : on peut marcher sur ce toit (même pente que le maillage)
         solid.SetPitched(fr.World(r1), fr.World(r2), ridge, low, W / 2);
 
         var center = new V2((A.X + C.X) / 2, (A.Y + C.Y) / 2);
-        Face(new[] { (A, low), (B, low), (r2, ridge), (r1, ridge) }, col, center, fr, m);
-        Face(new[] { (C, low), (D, low), (r1, ridge), (r2, ridge) }, col, center, fr, m);
+        m.Material = look.RoofCode;
+        Face(new[] { (A, low), (B, low), (r2, ridge), (r1, ridge) }, col, center, fr, m, roofUv2);
+        Face(new[] { (C, low), (D, low), (r1, ridge), (r2, ridge) }, col, center, fr, m, roofUv2);
         if (hip)
         {
-            Face(new[] { (B, low), (C, low), (r2, ridge) }, col, center, fr, m);
-            Face(new[] { (D, low), (A, low), (r1, ridge) }, col, center, fr, m);
+            Face(new[] { (B, low), (C, low), (r2, ridge) }, col, center, fr, m, roofUv2);
+            Face(new[] { (D, low), (A, low), (r1, ridge) }, col, center, fr, m, roofUv2);
+            m.Material = look.WallCode;
         }
         else
         {
+            m.Material = look.WallCode;
             // pignons : murs triangulaires (avec fenêtres)
             var g2 = new V2((gB.X + gC.X) / 2, (gB.Y + gC.Y) / 2); var g1 = new V2((gD.X + gA.X) / 2, (gD.Y + gA.Y) / 2);
             Gable(gB, gC, g2, eave, ridge, wall, map, wallUv2, fr, m);
@@ -804,17 +891,23 @@ public static partial class BuildingBuilder
         m.I.Add(k); m.I.Add(k + 1); m.I.Add(k + 2);
     }
 
-    static void Skillion(V2 A, V2 B, V2 C, V2 D, double low, double high, Color col, Color wall, in LocalFrame fr, MeshAcc m)
+    static void Skillion(V2 A, V2 B, V2 C, V2 D, double low, double high, Color col, Color wall, in LocalFrame fr, MeshAcc m,
+        BuildingLook look, Vector2 uv2)
     {
         var center = new V2((A.X + C.X) / 2, (A.Y + C.Y) / 2);
-        Face(new[] { (A, low), (B, low), (C, high), (D, high) }, col, center, fr, m);
-        Face(new[] { (B, low), (C, high), (C, low) }, wall, center, fr, m);
-        Face(new[] { (D, high), (A, low), (D, low) }, wall, center, fr, m);
-        Face(new[] { (C, high), (D, high), (D, low), (C, low) }, wall, center, fr, m);
+        m.Material = look.RoofCode;
+        Face(new[] { (A, low), (B, low), (C, high), (D, high) }, col, center, fr, m, uv2);
+        // murs sous le toit en appentis : matière du mur, mais sans le rez-de-chaussée maçonné d'un chalet (UV en altitude)
+        m.Material = FacadeMaterials.Code(look.Wall == FacadeSurface.Chalet ? FacadeSurface.Wood : look.Wall);
+        Face(new[] { (B, low), (C, high), (C, low) }, wall, center, fr, m, uv2);
+        Face(new[] { (D, high), (A, low), (D, low) }, wall, center, fr, m, uv2);
+        Face(new[] { (C, high), (D, high), (D, low), (C, low) }, wall, center, fr, m, uv2);
+        m.Material = look.WallCode;
     }
 
-    /// <summary>Ajoute une face plane (3 ou 4 points), normale tournée vers l'extérieur du bâtiment.</summary>
-    static void Face((V2 p, double h)[] pts, Color col, V2 center, in LocalFrame fr, MeshAcc m)
+    /// <summary>Ajoute une face plane (3 ou 4 points), normale tournée vers l'extérieur du bâtiment. UV en mètres :
+    /// horizontale le long de la face, distance vers le bas de la pente (rangées de tuiles parallèles à la gouttière).</summary>
+    static void Face((V2 p, double h)[] pts, Color col, V2 center, in LocalFrame fr, MeshAcc m, Vector2 uv2 = default)
     {
         var p0 = fr.P(pts[0].p, pts[0].h);
         var p1 = fr.P(pts[1].p, pts[1].h);
@@ -824,8 +917,10 @@ public static partial class BuildingBuilder
         double fx = 0, fy = 0; foreach (var (p, _) in pts) { fx += p.X; fy += p.Y; }
         var outward = fr.Dir(fx / pts.Length - center.X, fy / pts.Length - center.Y, 0.3);
         if (n.Dot(outward) < 0) n = -n;
+        // normale dans le repère local (est, nord, haut) pour les UV de la pente
+        double lx = n.Dot(fr.East.ToVector3()), ly = n.Dot(fr.North.ToVector3()), lz = n.Dot(fr.Up);
         int k = m.Count;
-        foreach (var (p, h) in pts) m.Vert(fr.P(p, h), n, col, Vector2.Zero, Vector2.Zero);
+        foreach (var (p, h) in pts) m.Vert(fr.P(p, h), n, col, FacadeMaterials.SlopeUv(p.X, p.Y, h, lx, ly, lz), uv2);
         m.I.Add(k); m.I.Add(k + 1); m.I.Add(k + 2);
         if (pts.Length == 4) { m.I.Add(k); m.I.Add(k + 2); m.I.Add(k + 3); }
     }
@@ -851,7 +946,9 @@ public static partial class BuildingBuilder
         double baseH = chapel ? top - 0.2 : floor0 - 1.0;
         double towerTop = chapel ? top + s * 1.2 : Math.Max(top + Math.Max(4, s * 0.8), eave + s * 2.4) * (kind == BuildingKind.Cathedral ? 1.15 : 1);
         double spire = s * (chapel ? 1.8 : 1.9);
+        m.Material = FacadeMaterials.Code(FacadeSurface.Stone);
         m.Box(fr, c, u, s / 2, s / 2, baseH, towerTop, stone);
+        m.Material = 0;
         // ouvertures du beffroi (sombres) sur chaque face, sous la flèche
         var dark = new Color(0.10f, 0.10f, 0.11f);
         double bh0 = towerTop - Math.Min(s * 0.9, 4.0), bh1 = towerTop - Math.Min(s * 0.25, 1.0);
@@ -864,8 +961,9 @@ public static partial class BuildingBuilder
         }
         // flèche pyramidale
         var p = new[] { c - u * (s / 2) - v * (s / 2), c + u * (s / 2) - v * (s / 2), c + u * (s / 2) + v * (s / 2), c - u * (s / 2) + v * (s / 2) };
-        var apex = fr.P(c, towerTop + spire);
-        for (int k = 0; k < 4; k++) m.Tri(fr.P(p[k], towerTop), fr.P(p[(k + 1) % 4], towerTop), apex, spireCol);
+        m.Material = FacadeMaterials.Code(spireCol.G > spireCol.R + 0.08f ? FacadeSurface.RoofCopper : spireCol.R > spireCol.B + 0.12f ? FacadeSurface.RoofTiles : FacadeSurface.RoofSlate);
+        for (int k = 0; k < 4; k++) Face(new[] { (p[k], towerTop), (p[(k + 1) % 4], towerTop), (c, towerTop + spire) }, spireCol, c, fr, m, new Vector2(0, (float)seed));
+        m.Material = 0;
         // collisions : la tour (on ne grimpe pas sur la flèche)
         var ring = new Vec3d[4]; for (int k = 0; k < 4; k++) ring[k] = fr.World(p[k]);
         var sh = Obstacles.Shape.Polygon(ring, null, baseH, towerTop);
@@ -894,6 +992,7 @@ public static partial class BuildingBuilder
     static void StadiumBowl(List<V2> ext, List<List<V2>> holes, double outerH, double innerH, double floor0, double seed,
         in LocalFrame fr, MeshAcc m, Ctx ctx)
     {
+        m.Material = 0;
         var pts = new List<V2>();
         var tris = Poly2.Triangulate(ext, holes, pts);
         var inner = new HashSet<(long, long)>();
@@ -950,6 +1049,102 @@ public static partial class BuildingBuilder
                     Line(P(sgn * hl, -pw), P(sgn * (hl - pd), -pw)); Line(P(sgn * (hl - pd), -pw), P(sgn * (hl - pd), pw)); Line(P(sgn * (hl - pd), pw), P(sgn * hl, pw));
                 }
         }
+    }
+
+    /// <summary>
+    /// Balcons sur les façades libres les mieux exposées (au sud de préférence), à chaque étage au-dessus du
+    /// rez-de-chaussée : dalle ou plancher, balustrade en planches découpées (chalets) ou garde-corps à barreaux.
+    /// Sur les immeubles, ils sont alignés sur les fenêtres dessinées par le shader (cases de 3,2 m le long du contour).
+    /// </summary>
+    static void Balconies(List<V2> ext, Cand cd, in LocalFrame fr, Ctx ctx, double floor0, double levelH, int levels,
+        double seed, BuildingLook look, MeshAcc m)
+    {
+        bool wood = look.Balconies == BalconyKind.Wood;
+        const double Cell = 3.2; // largeur des cases de fenêtres du shader (WindowStyle.Residential)
+        var faces = new List<(int i, double score, double s0)>();
+        double s = 0;
+        for (int i = 0; i < ext.Count; i++)
+        {
+            var a = ext[i]; var b = ext[(i + 1) % ext.Count];
+            double len = Poly2.Dist(a, b);
+            double s0 = s; s += len;
+            if (len < 4.0) continue;
+            var n = ((b - a) * (1 / len)).Right;
+            bool shared = false;
+            foreach (double off in new[] { 1.0, 2.2 })
+            {
+                ToTile(fr, (a + b) * 0.5 + n * off, ctx, out double x, out double y);
+                if (At(ctx, x, y, cd) != null) { shared = true; break; }
+            }
+            if (shared) continue;
+            faces.Add((i, -n.Y * 2 + Math.Min(len, 20) * 0.05 + Hash(seed * 5.3 + i) * 0.3, s0));
+        }
+        if (faces.Count == 0) return;
+        faces.Sort((p, q) => q.score.CompareTo(p.score));
+        int nFaces = !wood && levels >= 3 ? Math.Min(2, faces.Count) : 1;
+        int topLevel = wood ? Math.Min(levels - 1, 2) : Math.Min(levels - 1, 12);
+        double depth = wood ? 1.2 : levels >= 3 ? 1.4 : 1.1, thick = wood ? 0.16 : 0.2;
+        var woodCol = look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? MeshAcc.Shade(look.WallColor, 0.95f) : new Color(0.42f, 0.27f, 0.16f);
+        var slabCol = wood ? woodCol : new Color(0.72f, 0.72f, 0.70f);
+        var railCol = wood ? woodCol : Hash(seed * 3.1) < 0.6 ? new Color(0.22f, 0.23f, 0.24f) : new Color(0.85f, 0.85f, 0.83f);
+        byte slabMat = FacadeMaterials.Code(wood ? FacadeSurface.DeckWood : FacadeSurface.Concrete);
+        byte railMat = FacadeMaterials.Code(wood ? FacadeSurface.RailWood : FacadeSurface.RailMetal);
+        var uv2 = new Vector2(0, (float)seed);
+        var up = fr.Up;
+
+        for (int fi = 0; fi < nFaces; fi++)
+        {
+            var (i, _, s0) = faces[fi];
+            var a = ext[i]; var b = ext[(i + 1) % ext.Count];
+            double len = Poly2.Dist(a, b);
+            var d = (b - a) * (1 / len); var n = d.Right;
+            // portions de façade (distances depuis a)
+            var spans = new List<(double t0, double t1)>();
+            if (wood) { double w = Math.Min(len - 0.6, Math.Max(len * 0.8, 3)); spans.Add(((len - w) / 2, (len + w) / 2)); }
+            else
+            {
+                int k0 = (int)Math.Ceiling((s0 + 0.3) / Cell), k1 = (int)Math.Floor((s0 + len - 0.3) / Cell); // cases entières
+                if (k1 - k0 == 1) spans.Add((k0 * Cell - s0 + 0.15, (k0 + 1) * Cell - s0 - 0.15));
+                for (int k = k0; k + 2 <= k1; k += 3) spans.Add((k * Cell - s0 + 0.15, (k + 2) * Cell - s0 - 0.15));
+            }
+            foreach (var (t0, t1) in spans)
+            {
+                var p0 = a + d * t0; var p1 = a + d * t1;
+                var q0 = p0 + n * depth; var q1 = p1 + n * depth;
+                double w = t1 - t0;
+                for (int lvl = 1; lvl <= topLevel; lvl++)
+                {
+                    double hb = floor0 + lvl * levelH;
+                    m.Material = slabMat;
+                    m.Quad(fr.P(p0, hb), fr.P(p1, hb), fr.P(q1, hb), fr.P(q0, hb), up, slabCol,
+                        new Vector2(0, 0), new Vector2((float)w, 0), new Vector2((float)w, (float)depth), new Vector2(0, (float)depth), uv2);
+                    m.Quad(fr.P(q0, hb - thick), fr.P(q1, hb - thick), fr.P(p1, hb - thick), fr.P(p0, hb - thick), -up, MeshAcc.Shade(slabCol, 0.8f),
+                        new Vector2(0, 0), new Vector2((float)w, 0), new Vector2((float)w, (float)depth), new Vector2(0, (float)depth), uv2);
+                    m.Side(fr, q0, q1, hb - thick, hb, MeshAcc.Shade(slabCol, 0.9f), uv2, new Vector2(0, 0), new Vector2((float)w, (float)thick));
+                    m.Side(fr, p0, q0, hb - thick, hb, MeshAcc.Shade(slabCol, 0.9f), uv2, new Vector2(0, 0), new Vector2((float)depth, (float)thick));
+                    m.Side(fr, q1, p1, hb - thick, hb, MeshAcc.Shade(slabCol, 0.9f), uv2, new Vector2(0, 0), new Vector2((float)depth, (float)thick));
+                    if (wood)
+                    {
+                        // consoles sous le plancher
+                        m.Material = FacadeMaterials.Code(FacadeSurface.Wood);
+                        int nb = w > 4.5 ? 3 : 2;
+                        for (int c = 0; c < nb; c++)
+                        {
+                            var at = p0 + d * (0.15 + (w - 0.3) * c / (nb - 1)) + n * (depth * 0.45);
+                            m.Box(fr, at, n, depth * 0.45, 0.06, hb - thick - 0.32, hb - thick, MeshAcc.Shade(woodCol, 0.85f));
+                        }
+                    }
+                    // balustrade (1 m), en retrait de 3 cm du bord
+                    m.Material = railMat;
+                    var r0 = q0 - n * 0.03 + d * 0.03; var r1 = q1 - n * 0.03 - d * 0.03;
+                    var e0 = p0 + d * 0.03; var e1 = p1 - d * 0.03;
+                    m.Side(fr, r0, r1, hb, hb + 1.0, railCol, uv2, new Vector2(0, 0), new Vector2((float)Poly2.Dist(r0, r1), 1));
+                    m.Side(fr, e0, r0, hb, hb + 1.0, railCol, uv2, new Vector2(0, 0), new Vector2((float)Poly2.Dist(e0, r0), 1));
+                    m.Side(fr, r1, e1, hb, hb + 1.0, railCol, uv2, new Vector2(0, 0), new Vector2((float)Poly2.Dist(r1, e1), 1));
+                }
+            }
+        }
+        m.Material = 0;
     }
 
     /// <summary>Auvents de toile au-dessus des vitrines, sur les façades qui donnent sur la rue.</summary>

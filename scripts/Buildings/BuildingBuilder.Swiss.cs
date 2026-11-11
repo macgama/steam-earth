@@ -230,6 +230,17 @@ public static partial class BuildingBuilder
         var roof = RoofColor(f, null, pitched, kind, seed);
         var style = height >= 3.5 && footprint >= 20 && !b.RoofOnly ? BuildingKinds.Windows(kind, shopfront, height, footprint) : WindowStyle.None;
         var uv2 = new Vector2((float)style, (float)seed);
+        // Matières (crépi, chalet, tuiles…) et volets, comme les bâtiments Overture (pas de balcons : les vrais volumes suffisent)
+        var look = FacadeMaterials.Choose(f?.Str("facade_material"), f?.Str("roof_material"), f?.Str("facade_color") != null,
+            f?.Str("roof_color") != null, kind, style, pitched, b.Lat, b.Lon, gmin, levels, footprint, height, seed, wall, roof);
+        wall = look.WallColor; roof = look.RoofColor;
+        // En pente, les vrais murs descendent jusqu'au sol aval : on y dessine les fenêtres du sous-sol habitable,
+        // sur la même grille d'étages que l'intérieur
+        if (floor0 - gmin >= 2.3)
+        {
+            int below = (int)Math.Floor((floor0 - gmin + 0.3) / map.LevelH);
+            map = new WallMap(floor0 - below * map.LevelH, map.LevelH);
+        }
 
         // Porte : sur un vrai mur qui donne dehors, le plus près du niveau du sol
         bool enterable = !SwissBuildings3D.Closed(b) && BuildingKinds.Enterable(kind) && footprint >= 16 && footprint <= 40_000
@@ -260,6 +271,7 @@ public static partial class BuildingBuilder
             dDir = (dB - dA) * (1 / len); dN = dDir.Right;
             dS0 = doorT0 * len; dS1 = doorT1 * len; dH0 = floor0; dH1 = floor0 + doorH;
         }
+        m.Material = look.WallCode;
         for (int k = 0; k < nWallIdx; k += 3)
         {
             var va = V[b.Idx[k]]; var vb = V[b.Idx[k + 1]]; var vc = V[b.Idx[k + 2]];
@@ -287,6 +299,8 @@ public static partial class BuildingBuilder
             }
             else WallVert3(t[0], t[1], t[2], nrm, tan, wall, uv2, map, fr, m);
         }
+        m.Material = look.RoofCode;
+        var roofUv2 = new Vector2(0, (float)seed);
         for (int k = nWallIdx; k + 2 < b.Idx.Length; k += 3)
         {
             var va = V[b.Idx[k]]; var vb = V[b.Idx[k + 1]]; var vc = V[b.Idx[k + 2]];
@@ -296,11 +310,13 @@ public static partial class BuildingBuilder
             if (n.Z < 0) n = -n;
             var nrm = fr.Dir(n.X, n.Y, n.Z);
             int i0 = m.Count;
-            m.Vert(fr.P(va.X, va.Y, gmin + va.Z), nrm, roof, Vector2.Zero, Vector2.Zero);
-            m.Vert(fr.P(vb.X, vb.Y, gmin + vb.Z), nrm, roof, Vector2.Zero, Vector2.Zero);
-            m.Vert(fr.P(vc.X, vc.Y, gmin + vc.Z), nrm, roof, Vector2.Zero, Vector2.Zero);
+            // UV en mètres sur le pan : rangées de tuiles parallèles à la gouttière
+            m.Vert(fr.P(va.X, va.Y, gmin + va.Z), nrm, roof, FacadeMaterials.SlopeUv(va.X, va.Y, va.Z, n.X, n.Y, n.Z), roofUv2);
+            m.Vert(fr.P(vb.X, vb.Y, gmin + vb.Z), nrm, roof, FacadeMaterials.SlopeUv(vb.X, vb.Y, vb.Z, n.X, n.Y, n.Z), roofUv2);
+            m.Vert(fr.P(vc.X, vc.Y, gmin + vc.Z), nrm, roof, FacadeMaterials.SlopeUv(vc.X, vc.Y, vc.Z, n.X, n.Y, n.Z), roofUv2);
             m.I.Add(i0); m.I.Add(i0 + 1); m.I.Add(i0 + 2);
         }
+        m.Material = 0;
 
         // Collisions : murs pleins (un abri sans murs laisse passer dessous)
         Vec3d[][] holeRings = null;

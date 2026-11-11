@@ -465,8 +465,25 @@ Tests : `-- --build=46.948,7.451,500 --enter=church --shot=f.png` place le perso
 plus proche (`school`, `shop`, `tall`, `any`…) ; `--stairs` le met au pied de l'escalier, et `--walktest=N` le fait
 avancer (il monte).
 
-Pistes suivantes : collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;
-textures de façades.
+### Matières des façades et des toits
+
+Les murs ne sont plus unis : **crépi, madriers de chalet, moellons, brique, béton banché, bardage métallique,
+colombages, clins peints** ; les toits : **tuiles** (à côtes ou en queue de castor), **ardoise ou fibrociment** (aussi
+en losanges), **tôle à joints debout, tavillons, gravier, cuivre, toit végétalisé, lauzes**. Les fenêtres d'habitation
+ont un cadre et une tablette, souvent des **volets** (une couleur par maison, certains fermés, davantage la nuit), et
+les chalets et immeubles ont des **balcons** (balustrade en planches découpées, ou garde-corps à barreaux alignés sur les
+fenêtres). Tout est dessiné par le shader (`scripts/Buildings/BuildingShader.cs`), sans image. La matière vient d'OSM
+quand elle est connue, sinon de la région et de l'altitude (`scripts/Buildings/FacadeMaterials.cs`) : chalets dans les
+Alpes (d'autant plus qu'on monte), pierre et lauzes au Tessin, brique au nord-ouest de l'Europe, clins en Amérique du
+Nord… Quatre niveaux : motifs simples en Bas ; volets, balcons et variations en Moyen ; relief des joints et salissures
+en Élevé ; relief fin, coulures et mousse en Ultra. Convention des sommets (réutilisable pour les modèles importés) :
+[docs/MATERIAUX_BATIMENTS.md](docs/MATERIAUX_BATIMENTS.md).
+
+| Grindelwald (Moyen) : chalets, balcons, volets | Les matières (Élevé) |
+|---|---|
+| ![](docs/facades-grindelwald.jpg) | ![](docs/facades-matieres.jpg) |
+
+Pistes suivantes : collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments.
 
 ## Personnage
 
