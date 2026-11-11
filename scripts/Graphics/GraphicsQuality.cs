@@ -57,6 +57,11 @@ public sealed record QualityProfile
     public int InteriorFloorSpan { get; init; }
     /// <summary>Enseignes des magasins (nom du commerce au-dessus de la porte) jusqu'à cette distance (m).</summary>
     public double SignDistance { get; init; }
+    /// <summary>Passants (Suisse) : au plus ce nombre à la fois, habitants des hectares à moins de PedestrianRadius m.</summary>
+    public int PedestrianMax { get; init; }
+    public double PedestrianRadius { get; init; }
+    /// <summary>Passants animés à chaque image jusqu'à cette distance (m) ; au-delà, animation moins souvent.</summary>
+    public double PedestrianSmoothDistance { get; init; }
     public double RoadsRadiusScale { get; init; }
     /// <summary>Accotement en gravier de chaque côté des routes goudronnées (m, 0 = aucun), bord fondu dans l'herbe.</summary>
     public float RoadShoulder { get; init; }
@@ -186,6 +191,9 @@ public static class GraphicsQuality
             FurnitureDetail = P(0, 1, 2, 3),
             InteriorFloorSpan = P(0, 1, 1, 2),
             SignDistance = P(40.0, 80.0, 140.0, 220.0),
+            PedestrianMax = P(12, 30, 60, 120),
+            PedestrianRadius = P(90.0, 130.0, 170.0, 230.0),
+            PedestrianSmoothDistance = P(15.0, 30.0, 50.0, 90.0),
             RoadsRadiusScale = P(0.6, 0.8, 1.0, 1.3),
             LabelsRadiusScale = P(0.7, 0.85, 1.0, 1.2),
             RoadShoulder = P(0f, 0.5f, 0.7f, 0.8f),

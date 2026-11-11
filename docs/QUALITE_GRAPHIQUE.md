@@ -42,6 +42,7 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Eau : maillage en mer (`WaterMaxLevel`) | 5 m | 5 m | 2,5 m | 1,2 m |
 | Personnage : ombre / ourlets / normal maps et tissage | non | oui | oui | oui |
 | Personnage : reflets satinés, contour de la peau / peau translucide, reflets des cheveux | non / non | non / non | oui / non | oui / oui |
+| Passants en Suisse : au plus (`PedestrianMax`) / rayon (`PedestrianRadius`) / animés à chaque image jusqu'à | 12 / 90 m / 15 m | 30 / 130 m / 30 m | 60 / 170 m / 50 m | 120 / 230 m / 90 m |
 
 « Élevé » correspond au rendu d'avant l'ajout des niveaux.
 

@@ -257,6 +257,7 @@ public partial class RoadLayer : Node3D
             }
             t.Mesh.Mesh = mesh;
             Obstacles.Set(t.Mesh, data.Clearings); // retire les arbres sur les routes, chemins et voies ferrées
+            Population.Walkways.Set(t.Mesh, data.Walks); // trottoirs et chemins des passants
         }
         else
         {
