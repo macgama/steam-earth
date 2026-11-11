@@ -173,6 +173,7 @@ public static class InteriorBuilder
                         if (!Poly2.RectInside(x.B.Ring, x.B.Holes, ctr, axis, c.Lc / 2 + 0.9, c.Wc / 2 + 0.15, 0.02)) continue;
                         var dd = door - ctr;
                         if (Math.Abs(dd.Dot(axis)) < c.Lc / 2 + 2.0 && Math.Abs(dd.Dot(new V2(-axis.Y, axis.X))) < c.Wc / 2 + 1.5) continue;
+                        if (Overlap(ctr, axis, c.Lc / 2, c.Wc / 2, door - x.B.DoorOut * 2.0, x.B.DoorOut, 2.0, 0.9)) continue; // couloir d'entrée
                         best = score; bestC = ctr; bestA = axis;
                     }
             }
@@ -382,7 +383,14 @@ public static class InteriorBuilder
         var rooms = new List<Room>();
         var root = new Room { S0 = -x.L / 2, S1 = x.L / 2, T0 = -x.W / 2, T1 = x.W / 2, Floor = floor, Use = use };
         var doors = new List<V2>();
-        if (floor == 0) doors.Add((b.DoorA + b.DoorB) * 0.5);
+        var clear = new List<(V2, V2, double, double)>();
+        if (floor == 0)
+        {
+            var mid = (b.DoorA + b.DoorB) * 0.5;
+            doors.Add(mid);
+            // couloir libre de 1,8 m de large sur 4 m depuis la porte d'entrée (sinon un rayon peut barrer l'accès)
+            clear.Add((mid - b.DoorOut * 2.0, b.DoorOut, 2.0, 0.9));
+        }
         Split(x, root, min, floor, x.FloorH[floor], top, rooms, doors, 0);
         x.Rooms += rooms.Count;
         if (!furnish) return;
@@ -393,7 +401,7 @@ public static class InteriorBuilder
             for (int i = 0; i < rooms.Count; i++)
                 rooms[i].Use = use == "hotel" ? "bedroom" : i == 0 ? "living" : i % 3 == 1 ? "bedroom" : i % 3 == 2 ? "kitchen" : "bedroom";
         }
-        foreach (var r in rooms) Furnish(x, r, x.FloorH[floor], top, doors);
+        foreach (var r in rooms) Furnish(x, r, x.FloorH[floor], top, doors, clear);
     }
 
     static void Split(Ctx x, Room r, double min, int floor, double h0, double h1, List<Room> leaves, List<V2> doors, int depth)
@@ -465,11 +473,14 @@ public static class InteriorBuilder
     {
         readonly Ctx _x; readonly Room _r; readonly List<V2> _doors;
         public readonly List<(V2 c, V2 u, double hu, double hv)> Taken = new();
-        public Placer(Ctx x, Room r, List<V2> doors) { _x = x; _r = r; _doors = doors; }
+        readonly List<(V2 c, V2 u, double hu, double hv)> _clear;
+        public Placer(Ctx x, Room r, List<V2> doors, List<(V2, V2, double, double)> clear) { _x = x; _r = r; _doors = doors; _clear = clear; }
 
         public bool Free(V2 c, V2 u, double hu, double hv)
         {
             if (!Poly2.RectInside(_x.B.Ring, _x.B.Holes, c, u, hu, hv, 0.05)) return false;
+            // passages à laisser libres (couloir d'entrée depuis la porte de la rue)
+            foreach (var (zc, zu, zhu, zhv) in _clear) if (Overlap(c, u, hu, hv, zc, zu, zhu, zhv)) return false;
             foreach (var d in _doors)
             {
                 var dd = d - c;
@@ -548,9 +559,22 @@ public static class InteriorBuilder
     static readonly Color Wood = new(0.48f, 0.32f, 0.20f), LightWood = new(0.70f, 0.55f, 0.36f), White = new(0.92f, 0.92f, 0.90f),
         Fabric = new(0.30f, 0.38f, 0.52f), Dark = new(0.18f, 0.18f, 0.20f), Metal = new(0.60f, 0.62f, 0.64f), Green = new(0.25f, 0.45f, 0.22f);
 
-    static void Furnish(Ctx x, Room r, double h, double top, List<V2> doors)
+    /// <summary>Deux rectangles orientés (centre, axe, demi-longueurs) se chevauchent-ils ? (axes séparateurs)</summary>
+    static bool Overlap(V2 c1, V2 u1, double hu1, double hv1, V2 c2, V2 u2, double hu2, double hv2)
     {
-        var p = new Placer(x, r, doors);
+        var v1 = new V2(-u1.Y, u1.X); var v2 = new V2(-u2.Y, u2.X); var d = c2 - c1;
+        foreach (var a in new[] { u1, v1, u2, v2 })
+        {
+            double r1 = hu1 * Math.Abs(u1.Dot(a)) + hv1 * Math.Abs(v1.Dot(a));
+            double r2 = hu2 * Math.Abs(u2.Dot(a)) + hv2 * Math.Abs(v2.Dot(a));
+            if (Math.Abs(d.Dot(a)) > r1 + r2) return false;
+        }
+        return true;
+    }
+
+    static void Furnish(Ctx x, Room r, double h, double top, List<V2> doors, List<(V2, V2, double, double)> clear)
+    {
+        var p = new Placer(x, r, doors, clear);
         int detail = x.Detail;
         double rs = r.S1 - r.S0, rt = r.T1 - r.T0;
         var center = x.C0 + x.U * ((r.S0 + r.S1) / 2) + x.V * ((r.T0 + r.T1) / 2);
