@@ -1,49 +1,46 @@
 using System;
-using Godot;
 
 namespace SteamEarth;
 
 /// <summary>
-/// Petit avion de tourisme quadriplace à aile haute (≈ 1 100 kg, 11 m d'envergure, moteur de 180 ch).
-/// Modèle de vol : portance et traînée calculées à partir de la vitesse <b>par rapport à l'air</b>
-/// (vitesse sol − vent réel GFS à l'altitude de l'avion), densité de l'air qui baisse avec l'altitude,
-/// décrochage au-delà de ~15° d'incidence, poussée d'hélice limitée par la puissance.
-/// Les commandes règlent l'incidence voulue (profondeur), le taux de roulis (ailerons) et le lacet (palonnier) ;
-/// leur efficacité dépend de la pression dynamique, comme sur un vrai avion. La stabilité de girouette aligne
-/// le nez sur le vent relatif : par vent de travers, l'avion « crabe ».
-/// Au sol : roues (roulement, freins, roue avant directrice) ; atterrissage trop dur, trop incliné ou sur l'eau = crash.
+/// Avions (tourisme, ligne) : vol arcade, facile au clavier.
+/// S cabre / Z pique (taux de tangage), Q/D inclinent (l'avion revient à plat quand on lâche), ←/→ palonnier ;
+/// le virage est coordonné (lacet = g·tan(inclinaison)/v). Maj/Ctrl règlent les gaz. La vitesse vient des gaz
+/// et de la pente (on accélère en piqué, on ralentit en montée) ; sous la vitesse de décrochage, le nez tombe.
+/// La vitesse sol est la vitesse air plus le vent réel (GFS) : par vent de travers, l'avion dérive.
+/// Au sol : roulage, freins, roue avant directrice ; rotation possible au-delà de la vitesse de décollage.
+/// Toucher trop fort, trop incliné, sur l'eau ou contre un bâtiment = crash.
 /// </summary>
 public partial class Plane : Vehicle
 {
-    const double Mass = 1100, WingArea = 16.2;
-    const double CL0 = 0.28, CLAlpha = 5.0, StallAlpha = 0.27, CD0 = 0.032, InducedK = 0.05;
-    const double StaticThrust = 3300, ThrustPower = 96_000; // W utiles à l'hélice (≈ 135 kW × 80 %)
-
+    /// <summary>Vitesse air le long de l'axe (m/s).</summary>
+    public double V;
     public Vec3d Vel;
     public double Throttle;
     public bool OnGround = true;
-    double _alpha, _beta, _airspeed, _prop, _elev, _ail, _rud;
-    Vec3d _wind;
-    Node3D _propeller, _elevator, _aileronL, _aileronR, _rudderNode, _nose, _rider;
+    double _vUp, _bank, _pitchRate;
+    Vec3d _wind = new(0, 0, 0);
 
-    public override VehicleKind Kind => VehicleKind.Plane;
-    public override string Label => "Avion";
-    public override double Speed => _airspeed;
-    public override bool CanExit => OnGround && Vel.Length() < 2;
-    public override double Radius => 5.5;
-    public override double BodyHeight => 2.8;
-    public override (double halfLength, double halfWidth, double height) Footprint => (4.6, 0.7, 2.1); // sous l'aile haute, on passe
-    public override double CameraTargetHeight => 1.9;
-    public override double CameraDistance => 17;
-    public override double CameraPitch => -0.18;
-    public override Vec3d ExitPoint => PosD - Right * 2.2 + Fwd * 0.5;
-    public bool Stalling => !OnGround && Math.Abs(_alpha) > StallAlpha * 0.92;
+    public Plane(VehicleSpec spec) : base(spec) { }
+
+    bool Jet => Spec.Family == VehicleFamily.Jet;
+    public override double Speed => V;
+    public override bool CanExit => OnGround && V < 2;
+    public override double Radius => Jet ? 6 : 5.5;
+    public override double BodyHeight => Spec.Height;
+    public override (double halfLength, double halfWidth, double height) Footprint => Jet ? (0, 0, 0) : (Spec.Length / 2, 0.7, 2.1); // sous l'aile haute, on passe
+    public override Vec3d ExitPoint => PosD - Right * (Jet ? 4 : 2.2) + Fwd * 0.5;
+    public bool Stalling => !OnGround && V < Spec.StallSpeed;
+    /// <summary>Vitesse de rotation (décollage).</summary>
+    public double RotateSpeed => Spec.StallSpeed * 1.1;
+    public double VerticalSpeed => Vel.Dot(PosD.Normalized());
+    public Vec3d WindNow => _wind;
 
     public override void PlaceAt(Vec3d pos, Vec3d heading)
     {
         base.PlaceAt(pos, heading);
-        Vel = new Vec3d(0, 0, 0);
-        Throttle = 0; OnGround = true;
+        V = 0; Vel = new Vec3d(0, 0, 0); _vUp = 0;
+        Throttle = 0; OnGround = true; Grounded = true;
     }
 
     /// <summary>Met l'avion en vol en <paramref name="pos"/>, à <paramref name="speed"/> m/s, en palier.</summary>
@@ -51,97 +48,97 @@ public partial class Plane : Vehicle
     {
         var up = pos.Normalized();
         PosD = pos; Up = up; Fwd = Tangent(heading, up);
-        Vel = Fwd * speed;
-        Throttle = 0.65; OnGround = false;
+        V = Math.Max(speed, Spec.StallSpeed * 1.5);
+        Vel = Fwd * V;
+        Throttle = 0.65; OnGround = false; Grounded = false;
     }
 
     public override void Step(VehicleInput input, double dt)
     {
-        int n = Math.Clamp((int)Math.Ceiling(dt * 120), 1, 12);
+        int n = Math.Clamp((int)Math.Ceiling(dt * 60), 1, 8);
         for (int i = 0; i < n; i++) SubStep(input, dt / n);
+        Throttle01 = Throttle;
+        double target = 0.15 + 0.85 * Throttle;
+        Rpm01 += (target - Rpm01) * Math.Min(1, dt * (Jet ? 0.8 : 2.5)); // un réacteur monte lentement en régime
     }
 
     void SubStep(VehicleInput input, double h)
     {
         var up = PosD.Normalized();
-        double alt = PosD.Length() - Geo.Radius;
-        if (input.ThrottleUp) Throttle = Math.Min(1, Throttle + 0.5 * h);
-        if (input.ThrottleDown) Throttle = Math.Max(0, Throttle - 0.5 * h);
-
+        if (input.ThrottleUp) Throttle = Math.Min(1, Throttle + 0.45 * h);
+        if (input.ThrottleDown) Throttle = Math.Max(0, Throttle - 0.45 * h);
         double ground = Ground(PosD, out _);
-        double agl = Math.Max(2, alt - ground);
-        _wind = Wind(PosD, agl);
-        var vA = Vel - _wind;
-        double v = vA.Length();
-        _airspeed = v;
-        var right = Right;
-        double rho = 1.225 * Math.Exp(-Math.Max(0, alt) / 8500);
-        double q = 0.5 * rho * v * v;
+        double alt = PosD.Length() - Geo.Radius;
+        _wind = Wind(PosD, Math.Max(2, alt - ground));
 
-        _alpha = v > 1 ? Math.Atan2(-vA.Dot(Up), vA.Dot(Fwd)) : 0;
-        _beta = v > 1 ? Math.Asin(Math.Clamp(vA.Dot(right) / v, -1, 1)) : 0;
+        double stall = Spec.StallSpeed, top = Spec.TopSpeed;
+        double eff = Math.Clamp((V - stall * 0.5) / stall, 0, 1); // efficacité des gouvernes
 
-        // Coefficients aérodynamiques (décrochage au-delà de StallAlpha)
-        double a = Math.Abs(_alpha);
-        double cl = CL0 + CLAlpha * _alpha;
-        double cd = CD0;
-        if (a > StallAlpha)
-        {
-            double clMax = CL0 + CLAlpha * StallAlpha * Math.Sign(_alpha);
-            double fade = Math.Clamp(1 - (a - StallAlpha) / 0.25, 0, 1);
-            cl = clMax * fade + (1 - fade) * 0.9 * Math.Sin(2 * _alpha);
-            cd += 1.1 * Math.Sin(a) * Math.Sin(a);
-        }
-        cd += InducedK * cl * cl;
+        // --- Vitesse : gaz (poussée qui diminue vers la vitesse maximale), pente, traînée au ralenti, freins au sol
+        double sinPitch = Math.Clamp(Fwd.Dot(up), -1, 1);
+        double a = Throttle * Spec.Accel * Math.Max(0, 1 - (V / top) * (V / top));
+        a -= G * sinPitch * (OnGround ? 0 : 0.85);
+        a -= (1 - Throttle) * 0.12 * Spec.Accel * (V / top) * (V / top) * 3 + (OnGround ? 0.3 : 0);
+        Braking = OnGround && input.Brake;
+        if (Braking) a -= Spec.Brake;
+        V = Math.Max(0, V + a * h);
 
-        var acc = up * -G;
-        if (v > 1)
-        {
-            var vhat = vA * (1 / v);
-            var liftDir = right.Cross(vhat).Normalized();
-            acc += (liftDir * (q * WingArea * cl) - vhat * (q * WingArea * cd) - right * (q * WingArea * 0.5 * _beta)) * (1 / Mass);
-        }
-        double thrust = Throttle * Math.Min(StaticThrust, ThrustPower / Math.Max(v, 1)) * rho / 1.225;
-        acc += Fwd * (thrust / Mass);
-        Vel += acc * h;
+        // --- Commandes
+        double pitchIn = -input.Throttle; // S = tirer (cabrer), Z = pousser
+        ElevatorIn += (pitchIn - ElevatorIn) * Math.Min(1, 8 * h);
+        AileronIn += ((OnGround ? 0 : input.Steer) - AileronIn) * Math.Min(1, 8 * h);
+        RudderIn += (input.Rudder + (OnGround ? input.Steer : 0) - RudderIn) * Math.Min(1, 8 * h);
 
-        // Au sol : roulement et freins le long de l'axe, les roues empêchent de glisser de côté
-        double groundSpeed = 0;
+        var f = Fwd; var u = Up; var right = Right;
         if (OnGround)
         {
-            var ft = Tangent(Fwd, up);
-            double vf = Vel.Dot(ft);
-            double dv = (0.03 + (input.Brake ? 0.45 : 0)) * G * h;
-            double nvf = Math.Abs(vf) <= dv ? 0 : vf - Math.Sign(vf) * dv;
-            Vel -= ft * (vf - nvf);
-            var rt = ft.Cross(up).Normalized();
-            Vel -= rt * (Vel.Dot(rt) * Math.Min(1, 12 * h));
-            groundSpeed = Math.Abs(nvf);
+            // Roulage : roue avant directrice ; rotation (cabrer) au-delà de la vitesse de décollage
+            double steer = (input.Steer + input.Rudder) * 0.5 * Math.Clamp(V / 2.5, 0, 1) / (1 + V / 15);
+            f = Rotate(f, up, -steer * h);
+            SteerAngle = -(input.Steer + input.Rudder) * 0.35;
+            double pitchNow = Math.Asin(Math.Clamp(f.Dot(up), -1, 1));
+            double pitchTarget = V >= RotateSpeed && pitchIn > 0 ? 0.2 * pitchIn : 0;
+            double dp = Math.Clamp(pitchTarget - pitchNow, -0.5 * h, 0.5 * h);
+            f = Rotate(f, f.Cross(up).Normalized(), dp);
+            _bank = 0;
+            // décollage : au-delà de la vitesse de décollage, l'aile porte selon l'assiette
+            double lift = V > RotateSpeed * 0.95 ? V * Math.Sin(Math.Max(0, pitchNow)) : 0;
+            _vUp = Math.Max(0, lift);
         }
+        else
+        {
+            SteerAngle = 0;
+            // Roulis : Q/D donnent un taux, l'avion revient à plat seul ; inclinaison limitée à 60°
+            double bankTarget = input.Steer * (Jet ? 0.55 : 1.0);
+            double rollRate = Spec.RollRate * eff;
+            _bank += Math.Clamp(bankTarget - _bank, -rollRate * h, rollRate * h) * (input.Steer == 0 ? 0.8 : 1);
+            // Tangage : taux voulu, la profondeur est moins efficace à basse vitesse ; décrochage : le nez tombe
+            double target = pitchIn * Spec.PitchRate * eff;
+            _pitchRate += (target - _pitchRate) * Math.Min(1, 4 * h);
+            double pr = _pitchRate * Math.Cos(_bank);
+            if (V < stall) pr -= (stall - V) / stall * 0.8; // le nez tombe, l'avion reprend de la vitesse
+            // assiette limitée : pas de looping au clavier
+            double pitchNow = Math.Asin(Math.Clamp(f.Dot(up), -1, 1));
+            if (pitchNow > 0.6 && pr > 0) pr *= Math.Max(0, (0.8 - pitchNow) / 0.2);
+            if (pitchNow < -0.7 && pr < 0) pr *= Math.Max(0, (pitchNow + 0.9) / 0.2);
+            var horiz = f.Cross(up).Normalized();
+            f = Rotate(f, horiz, pr * h);
+            // Virage coordonné + palonnier
+            double yaw = G * Math.Tan(_bank) / Math.Max(V, stall * 0.6) + input.Rudder * 0.12 * eff;
+            f = Rotate(f, up, -yaw * h);
+        }
+        f = f.Normalized();
+        // Haut : la verticale locale inclinée de l'angle de roulis autour de l'avant
+        var horizRight = f.Cross(up).Normalized();
+        var level = horizRight.Cross(f).Normalized();
+        u = Rotate(level, f, _bank);
+        Fwd = f; Up = (u - f * u.Dot(f)).Normalized();
 
-        // Rotations : efficacité des gouvernes ∝ pression dynamique (référence : 50 m/s au niveau de la mer)
-        double eff = Math.Clamp(q / 1500, 0, 1.3);
-        double pitchIn = -input.Throttle; // S = tirer (cabrer), Z = pousser
-        double alphaTarget = 0.035 + pitchIn * (pitchIn > 0 ? 0.24 : 0.14);
-        double pitchRate = (alphaTarget - _alpha) * 2.2 * eff;
-        double bankRight = -Math.Asin(Math.Clamp(right.Dot(up), -1, 1));
-        double rollRate = OnGround ? 0 : (input.Steer * 1.5 - bankRight * 0.08) * eff;
-        double yawRate = (_beta * 1.8 + input.Rudder * 0.35) * eff;
-        if (OnGround) yawRate += (input.Steer + input.Rudder) * 0.5 * Math.Clamp(groundSpeed / 2.5, 0, 1) / (1 + groundSpeed / 20);
-        _elev += (pitchIn - _elev) * Math.Min(1, 8 * h);
-        _ail += (input.Steer - _ail) * Math.Min(1, 8 * h);
-        _rud += (input.Rudder + (OnGround ? input.Steer : 0) - _rud) * Math.Min(1, 8 * h);
-
-        var f = Fwd; var u = Up;
-        f = Rotate(f, right, pitchRate * h); u = Rotate(u, right, pitchRate * h);   // tangage (+ = cabrer)
-        u = Rotate(u, f, rollRate * h);                                            // roulis (+ = aile droite basse)
-        f = Rotate(f, u, -yawRate * h);                                            // lacet (+ = nez à droite)
-        Fwd = f.Normalized();
-        Up = (u - Fwd * u.Dot(Fwd)).Normalized();
-
+        // --- Mouvement : vitesse air le long de l'axe + vent
+        Vel = OnGround ? Tangent(Fwd, up) * V + up * _vUp : Fwd * V + _wind;
         PosD += Vel * h;
 
-        // Contact avec le sol (le point de référence est sous les roues)
+        // --- Contact avec le sol (le point de référence est sous les roues)
         up = PosD.Normalized();
         ground = Ground(PosD, out bool water);
         double above = PosD.Length() - Geo.Radius - ground;
@@ -150,38 +147,44 @@ public partial class Plane : Vehicle
             double vn = Vel.Dot(up);
             if (!OnGround)
             {
-                double bank = Math.Abs(Math.Asin(Math.Clamp(Right.Dot(up), -1, 1)));
-                if (water) { Crash($"Amerrissage à {Vel.Length() * 3.6:N0} km/h : cet avion n'a pas de flotteurs !"); return; }
-                if (vn < -4.5 || bank > 0.4 || Fwd.Dot(up) < -0.2) { Crash($"Crash ! (vitesse verticale {vn:F1} m/s, inclinaison {bank * 180 / Math.PI:F0}°)"); return; }
-                Notice = $"Posé ! (vitesse verticale {vn:F1} m/s)";
+                double bank = Math.Abs(BankAngle);
+                if (water) { Crash(string.Format(Loc.T("Amerrissage à {0:N0} km/h : cet avion n'a pas de flotteurs !"), V * 3.6)); return; }
+                if (vn < -6 || vn > 3 || V > Spec.StallSpeed * 1.7 || bank > 0.5 || PitchAngle < -0.2) { Crash(string.Format(Loc.T("Crash ! (vitesse verticale {0:F1} m/s, inclinaison {1:F0}°)"), vn, bank * 180 / Math.PI)); return; }
+                Notice = string.Format(Loc.T("Posé ! (vitesse verticale {0:F1} m/s)"), vn);
+                Impact = Math.Clamp(-vn / 8, 0.15, 0.6);
             }
             PosD = up * (Geo.Radius + ground);
-            if (vn < 0) Vel -= up * vn;
+            _vUp = 0;
             OnGround = true;
         }
-        else if (above > 0.15) OnGround = false;
+        else if (above > 0.3 && _vUp > 0 || above > 3) OnGround = false;
+        Grounded = OnGround;
 
         if (OnGround) AlignOnGround(up);
         else
         {
-            // Bâtiments : l'aile n'y résiste pas
-            var resolved = Obstacles.Resolve(PosD, 4, 3);
-            if ((resolved - PosD).Length() > 1e-3) { Crash("Collision avec un bâtiment !"); return; }
+            var resolved = Obstacles.Resolve(PosD, Radius * 0.7, 3);
+            if ((resolved - PosD).Length() > 1e-3) { Crash(Loc.T("Collision avec un obstacle !")); return; }
         }
-        _prop += (Throttle * 0.85 + 0.15 * Math.Min(1, Throttle * 10 + 0.3)) * 160 * h;
+        if (OnGround)
+        {
+            if (ResolveObstacles(1.5, BodyHeight) && V > 4) { Notice = Loc.T("Choc !"); Impact = 0.6; V *= 0.3; }
+            WheelAngle += V * h / 0.3;
+        }
+        Spin += (Throttle * 0.85 + 0.15) * (Jet ? 40 : 160) * h;
     }
 
-    /// <summary>Au sol : pas d'inclinaison latérale, le nez ne descend pas sous l'horizontale de la piste,
-    /// la queue ne touche pas (cabrage limité à 14°).</summary>
+    /// <summary>Au sol : pas d'inclinaison latérale, l'assiette suit la piste (cabrage limité pour la rotation).</summary>
     void AlignOnGround(Vec3d up)
     {
         var ft = Tangent(Fwd, up);
         var rt = ft.Cross(up).Normalized();
-        double hf = Ground(PosD + ft * 2.5, out _), hb = Ground(PosD - ft * 1.0, out _);
+        double l = Math.Min(Spec.Length * 0.35, 6);
+        double hf = Ground(PosD + ft * l, out _), hb = Ground(PosD - ft * (l * 0.4), out _);
         double hr = Ground(PosD + rt * 1.3, out _), hl = Ground(PosD - rt * 1.3, out _);
-        var n = (up - ft * ((hf - hb) / 3.5) - rt * ((hr - hl) / 2.6)).Normalized();
+        var n = (up - ft * ((hf - hb) / (l * 1.4)) - rt * ((hr - hl) / 2.6)).Normalized();
         var fn = Tangent(Fwd, n);
-        double p = Math.Clamp(Math.Asin(Math.Clamp(Fwd.Dot(n), -1, 1)), 0, 0.25);
+        double p = Math.Clamp(Math.Asin(Math.Clamp(Fwd.Dot(n), -1, 1)), 0, 0.22);
         Fwd = (fn * Math.Cos(p) + n * Math.Sin(p)).Normalized();
         var r = Fwd.Cross(n).Normalized();
         Up = r.Cross(Fwd).Normalized();
@@ -190,11 +193,12 @@ public partial class Plane : Vehicle
     void Crash(string message)
     {
         Notice = message;
+        Impact = 1;
         var up = PosD.Normalized();
         PosD = up * (Geo.Radius + Ground(PosD, out _));
         Vel = new Vec3d(0, 0, 0);
-        Throttle = 0;
-        OnGround = true;
+        V = 0; Throttle = 0; _bank = 0; _vUp = 0;
+        OnGround = true; Grounded = true;
         Up = up;
         Fwd = Tangent(Fwd, up);
     }
@@ -207,69 +211,10 @@ public partial class Plane : Vehicle
         Geo.LocalFrame(up, out var east, out var north);
         double we = _wind.Dot(east), wn = _wind.Dot(north), ws = Math.Sqrt(we * we + wn * wn);
         double from = (Math.Atan2(-we, -wn) * 180 / Math.PI + 360) % 360;
-        string s = $"Avion : vitesse air {_airspeed * 3.6:N0} km/h, sol {gs * 3.6:N0} km/h   altitude {alt:N0} m (hauteur {HeightAboveGround:N0} m)   " +
-                   $"vario {Vel.Dot(up):+0.0;-0.0;0.0} m/s   gaz {Throttle * 100:N0} %   incidence {_alpha * 180 / Math.PI:F0}°   vent réel {ws * 3.6:N0} km/h du {from:F0}°";
-        if (Stalling) s += "   ⚠ DÉCROCHAGE";
-        if (OnGround) s += Vel.Length() < 2 ? "   (au sol)" : "   (roulage)";
-        return s + "   [Maj/Ctrl gaz, S cabrer, Z piquer, Q/D roulis (au sol : diriger), ←/→ palonnier, Espace freins, E descendre]";
-    }
-
-    public override void _Ready()
-    {
-        var white = Mat(new Color(0.95f, 0.95f, 0.95f), 0.4f);
-        var red = Mat(new Color(0.75f, 0.1f, 0.1f), 0.4f);
-        var dark = Mat(new Color(0.1f, 0.1f, 0.12f), 0.6f);
-        var tyre = Mat(new Color(0.06f, 0.06f, 0.06f), 0.9f);
-        var metal = Mat(new Color(0.7f, 0.7f, 0.72f), 0.3f, 0.8f);
-        var glass = new StandardMaterial3D { AlbedoColor = new Color(0.15f, 0.2f, 0.26f, 0.55f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, Roughness = 0.1f };
-
-        // Fuselage (axe le long de Z), cabine vitrée, capot moteur
-        Part(new CapsuleMesh { Radius = 0.62f, Height = 4.2f }, white, new Vector3(0, 1.55f, -0.6f), null, new Vector3(Mathf.Pi / 2, 0, 0));
-        Part(new CylinderMesh { TopRadius = 0.18f, BottomRadius = 0.55f, Height = 3.6f }, white, new Vector3(0, 1.7f, 3.0f), null, new Vector3(Mathf.Pi / 2, 0, 0));
-        Part(new BoxMesh { Size = new Vector3(1.15f, 0.6f, 1.6f) }, glass, new Vector3(0, 2.05f, -0.5f));
-        Part(new BoxMesh { Size = new Vector3(1.28f, 0.12f, 3.0f) }, red, new Vector3(0, 1.3f, 0.6f));
-        _nose = Pivot(new Vector3(0, 1.55f, -2.75f));
-        Part(new SphereMesh { Radius = 0.2f, Height = 0.4f }, red, Vector3.Zero, _nose);
-        _propeller = Pivot(new Vector3(0, 0, -0.1f), _nose);
-        Part(new BoxMesh { Size = new Vector3(1.9f, 0.14f, 0.04f) }, dark, Vector3.Zero, _propeller);
-
-        // Aile haute, ailerons, empennage
-        Part(new BoxMesh { Size = new Vector3(11f, 0.14f, 1.5f) }, white, new Vector3(0, 2.4f, -0.4f));
-        Part(new BoxMesh { Size = new Vector3(0.6f, 0.15f, 1.52f) }, red, new Vector3(-5.2f, 2.4f, -0.4f));
-        Part(new BoxMesh { Size = new Vector3(0.6f, 0.15f, 1.52f) }, red, new Vector3(5.2f, 2.4f, -0.4f));
-        _aileronL = Pivot(new Vector3(-3.8f, 2.4f, 0.35f));
-        Part(new BoxMesh { Size = new Vector3(2.2f, 0.06f, 0.3f) }, white, new Vector3(0, 0, 0.15f), _aileronL);
-        _aileronR = Pivot(new Vector3(3.8f, 2.4f, 0.35f));
-        Part(new BoxMesh { Size = new Vector3(2.2f, 0.06f, 0.3f) }, white, new Vector3(0, 0, 0.15f), _aileronR);
-        Part(new BoxMesh { Size = new Vector3(0.06f, 1.0f, 0.06f) }, metal, new Vector3(-1.2f, 1.75f, -0.3f), null, new Vector3(0, 0, 0.9f)); // haubans
-        Part(new BoxMesh { Size = new Vector3(0.06f, 1.0f, 0.06f) }, metal, new Vector3(1.2f, 1.75f, -0.3f), null, new Vector3(0, 0, -0.9f));
-        Part(new BoxMesh { Size = new Vector3(3.4f, 0.08f, 0.8f) }, white, new Vector3(0, 1.75f, 4.3f));
-        _elevator = Pivot(new Vector3(0, 1.75f, 4.7f));
-        Part(new BoxMesh { Size = new Vector3(3.2f, 0.05f, 0.35f) }, red, new Vector3(0, 0, 0.17f), _elevator);
-        Part(new BoxMesh { Size = new Vector3(0.08f, 1.3f, 1.0f) }, white, new Vector3(0, 2.45f, 4.25f));
-        _rudderNode = Pivot(new Vector3(0, 2.45f, 4.75f));
-        Part(new BoxMesh { Size = new Vector3(0.06f, 1.25f, 0.35f) }, red, new Vector3(0, 0, 0.17f), _rudderNode);
-
-        // Train d'atterrissage tricycle (le point de référence est sous les roues)
-        foreach (var x in new[] { -1.2f, 1.2f })
-        {
-            Wheel(new Vector3(x, 0.26f, 0.3f), 0.26f, 0.16f, tyre, metal, this, out _);
-            Part(new BoxMesh { Size = new Vector3(0.06f, 1.0f, 0.08f) }, metal, new Vector3(x * 0.7f, 0.75f, 0.3f), null, new Vector3(0, 0, x > 0 ? 0.55f : -0.55f));
-        }
-        Wheel(new Vector3(0, 0.22f, -2.2f), 0.22f, 0.12f, tyre, metal, this, out _);
-        Part(new BoxMesh { Size = new Vector3(0.06f, 0.9f, 0.06f) }, metal, new Vector3(0, 0.7f, -2.25f));
-
-        _rider = Rider(new Vector3(-0.3f, 1.3f, -0.2f), CharacterSeat.Plane);
-    }
-
-    protected override void Animate()
-    {
-        UpdateRider();
-        if (_propeller == null) return;
-        _propeller.Rotation = new Vector3(0, 0, (float)(_prop % (2 * Math.PI)));
-        _elevator.Rotation = new Vector3((float)_elev * 0.35f, 0, 0);
-        _aileronL.Rotation = new Vector3((float)_ail * 0.3f, 0, 0);
-        _aileronR.Rotation = new Vector3(-(float)_ail * 0.3f, 0, 0);
-        _rudderNode.Rotation = new Vector3(0, -(float)_rud * 0.4f, 0);
+        string s = $"{Loc.T(Spec.Name)} : {Loc.T("vitesse air")} {V * 3.6:N0} km/h, {Loc.T("sol")} {gs * 3.6:N0} km/h   {Loc.T("altitude")} {alt:N0} m ({Loc.T("hauteur")} {HeightAboveGround:N0} m)   " +
+                   $"{Loc.T("vario")} {VerticalSpeed:+0.0;-0.0;0.0} m/s   {Loc.T("gaz")} {Throttle * 100:N0} %   {Loc.T("vent réel")} {ws * 3.6:N0} km/h {Loc.T("du")} {from:F0}°";
+        if (Stalling) s += "   ⚠ " + Loc.T("DÉCROCHAGE");
+        if (OnGround) s += "   " + Loc.T(V < 2 ? "(au sol)" : V >= RotateSpeed ? "(tire S pour décoller)" : "(roulage)");
+        return s + "   [" + Loc.T("Maj/Ctrl gaz, S cabrer, Z piquer, Q/D incliner (au sol : diriger), ←/→ palonnier, Espace freins, V vue, E descendre") + "]";
     }
 }

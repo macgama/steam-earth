@@ -39,13 +39,14 @@ public partial class ControlsPanel : PanelContainer
         }),
         ("Véhicules", new[]
         {
-            ("{G}", "Choisir un véhicule : voiture, vélo, bateau, avion"),
+            ("{G}", "Choisir un véhicule (16 : voitures, bus, camion, tracteur, vélo, moto, bateaux, voilier, avions, hélicoptère)"),
             ("{E}", "Monter dans le véhicule le plus proche / en descendre"),
-            ("{W} / {S} ou ↑ / ↓", "Accélérer / freiner, puis reculer à l'arrêt (avion : piquer / cabrer)"),
-            ("{A} / {D}", "Tourner (avion : roulis)"),
-            ("Maj / Ctrl", "Avion : plus / moins de gaz"),
-            ("← / →", "Tourner (avion : palonnier)"),
-            ("Espace", "Avion : freins"),
+            ("{V}", "Vue arrière / vue intérieure avec tableau de bord"),
+            ("{W} / {S} ou ↑ / ↓", "Accélérer / freiner, puis reculer à l'arrêt (avion : piquer / cabrer ; voilier : hisser / affaler)"),
+            ("{A} / {D}", "Tourner (avion : incliner)"),
+            ("Espace", "Frein à main : glisser dans les virages (avion : freins)"),
+            ("Maj / Ctrl", "Avion : plus / moins de gaz ; hélicoptère : monter / descendre ; vélo : en danseuse ; voilier : moteur"),
+            ("← / →", "Tourner (avion : palonnier ; hélicoptère : glisser de côté)"),
         }),
         ("Monde", new[]
         {

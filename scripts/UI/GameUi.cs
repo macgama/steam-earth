@@ -197,6 +197,8 @@ public partial class GameUi : CanvasLayer
             l.AutoTranslateMode = AutoTranslateModeEnum.Disabled;
             box.AddChild(l);
         }
+        box.AddChild(UiTheme.Section("Véhicules"));
+        box.AddChild(UiTheme.Dim("Modèles et sons : Kenney (kenney.nl), Starter Kit Racing — CC0", 15));
         var back = new Button { Text = "Retour", CustomMinimumSize = new Vector2(140, 40), SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd };
         back.Pressed += CloseSub;
         box.AddChild(back);

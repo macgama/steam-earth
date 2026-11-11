@@ -15,11 +15,14 @@ public partial class VehicleManager : CanvasLayer
     public Weather Weather;
     public Atmosphere Atmosphere;
 
-    const int MaxVehicles = 8;
+    const int MaxVehicles = 10;
     readonly List<Vehicle> _vehicles = new();
     readonly Dictionary<Vehicle, Vec3d> _registered = new(); // position à laquelle l'obstacle du véhicule garé a été enregistré
     Node3D _world;
     PanelContainer _panel;
+    readonly List<Button> _buttons = new();
+    VehicleAudio _audio;
+    VehicleDashboard _dashboard;
     Label _message;
     double _messageTime;
     // Vent : un échantillon GFS gardé quelques secondes (il varie lentement)
@@ -38,6 +41,10 @@ public partial class VehicleManager : CanvasLayer
         GetParent().CallDeferred(Node.MethodName.AddChild, _world);
 
         Vehicle.Wind = WindAt;
+        _audio = new VehicleAudio { Name = "VehicleAudio" };
+        AddChild(_audio);
+        _dashboard = new VehicleDashboard { Name = "VehicleDashboard" };
+        AddChild(_dashboard);
         GraphicsQuality.Changed += (_, _) => { foreach (var v in _vehicles) ApplyQuality(v); };
 
         _panel = new PanelContainer { Visible = false };
@@ -48,14 +55,19 @@ public partial class VehicleManager : CanvasLayer
         box.AddThemeConstantOverride("separation", 8);
         _panel.AddChild(box);
         box.AddChild(new Label { Text = "Véhicules — il apparaît devant toi et tu montes dedans (E pour descendre)", HorizontalAlignment = HorizontalAlignment.Center });
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 8);
-        box.AddChild(row);
-        AddButton(row, "1  Voiture", VehicleKind.Car);
-        AddButton(row, "2  Vélo", VehicleKind.Bike);
-        AddButton(row, "3  Bateau", VehicleKind.Boat);
-        AddButton(row, "4  Avion", VehicleKind.Plane);
-        box.AddChild(new Label { Text = "Le bateau va sur l'eau la plus proche. L'avion apparaît en vol si tu voles (caméra libre), sinon au sol.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color(1, 1, 1, 0.7f) });
+        var cols = new HBoxContainer();
+        cols.AddThemeConstantOverride("separation", 14);
+        box.AddChild(cols);
+        foreach (var cat in VehicleCatalog.Categories)
+        {
+            var col = new VBoxContainer();
+            col.AddThemeConstantOverride("separation", 4);
+            cols.AddChild(col);
+            col.AddChild(new Label { Text = cat, HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color(1, 0.85f, 0.5f) });
+            foreach (var spec in VehicleCatalog.All)
+                if (spec.Category == cat) AddButton(col, spec);
+        }
+        box.AddChild(new Label { Text = "Flèches + Entrée pour choisir, G ou Échap pour fermer. Les bateaux vont sur l'eau la plus proche ; les avions et l'hélicoptère apparaissent en vol si tu voles (caméra libre), sinon au sol.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color(1, 1, 1, 0.7f), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(620, 0) });
 
         _message = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false };
         _message.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterBottom, Control.LayoutPresetMode.KeepSize, 90);
@@ -68,22 +80,25 @@ public partial class VehicleManager : CanvasLayer
         AddChild(_message);
     }
 
-    void AddButton(HBoxContainer row, string text, VehicleKind kind)
+    void AddButton(VBoxContainer col, VehicleSpec spec)
     {
-        var b = new Button { Text = text, CustomMinimumSize = new Vector2(130, 56), FocusMode = Control.FocusModeEnum.None };
-        b.Pressed += () => { Toggle(); Spawn(kind); };
-        row.AddChild(b);
+        var b = new Button { Text = spec.Name, CustomMinimumSize = new Vector2(170, 38), FocusMode = Control.FocusModeEnum.All };
+        b.Pressed += () => { Toggle(); Spawn(spec); };
+        col.AddChild(b);
+        _buttons.Add(b);
     }
 
     public void Toggle()
     {
         _panel.Visible = !_panel.Visible;
         Camera.InputBlocked = _panel.Visible;
-        if (_panel.Visible) Input.MouseMode = Input.MouseModeEnum.Visible;
+        if (_panel.Visible) { Input.MouseMode = Input.MouseModeEnum.Visible; if (_buttons.Count > 0) _buttons[0].GrabFocus(); }
+        else GetViewport().GuiReleaseFocus();
     }
 
     public void Message(string text, double seconds = 4)
     {
+        text = Loc.T(text);
         GD.Print($"[Véhicules] {text}");
         _message.Text = text;
         _message.Visible = true;
@@ -95,9 +110,7 @@ public partial class VehicleManager : CanvasLayer
         if (e is not InputEventKey k || !k.Pressed || k.Echo) return;
         if (_panel.Visible)
         {
-            int i = k.PhysicalKeycode switch { Key.Key1 => 0, Key.Key2 => 1, Key.Key3 => 2, Key.Key4 => 3, _ => -1 };
-            if (i >= 0) { Toggle(); Spawn((VehicleKind)i); GetViewport().SetInputAsHandled(); }
-            else if (k.PhysicalKeycode is Key.G or Key.Escape) { Toggle(); GetViewport().SetInputAsHandled(); }
+            if (k.PhysicalKeycode is Key.G or Key.Escape) { Toggle(); GetViewport().SetInputAsHandled(); }
             return;
         }
         if (Camera.InputBlocked) return;
@@ -113,7 +126,7 @@ public partial class VehicleManager : CanvasLayer
     {
         if (Camera.Vehicle != null)
         {
-            if (!Camera.LeaveVehicle()) Message(Camera.Vehicle is Plane p && !p.OnGround ? "Pose-toi d'abord pour descendre de l'avion" : "Arrête-toi pour descendre", 2.5);
+            if (!Camera.LeaveVehicle()) Message(Camera.Vehicle.Spec.InAir && !Camera.Vehicle.Grounded ? "Pose-toi d'abord pour descendre" : "Arrête-toi pour descendre", 2.5);
             return;
         }
         Vehicle best = null;
@@ -128,7 +141,7 @@ public partial class VehicleManager : CanvasLayer
     }
 
     /// <summary>Fait apparaître un véhicule devant le joueur et le fait monter dedans.</summary>
-    public Vehicle Spawn(VehicleKind kind)
+    public Vehicle Spawn(VehicleSpec spec)
     {
         if (Camera.Ride != null) { Message("Descends d'abord du train ou du bus (H)", 2.5); return null; }
         Vec3d basePos; double yaw;
@@ -150,21 +163,12 @@ public partial class VehicleManager : CanvasLayer
         var head = north * Math.Cos(yaw) + east * Math.Sin(yaw);
         var right = head.Cross(up).Normalized();
 
-        Vehicle v = kind switch
+        var v = spec.Create();
+        if (flying && v is Plane plane) plane.PlaceInAir(basePos, head, spec.StallSpeed * 1.7);
+        else if (flying && v is Helicopter heli) heli.PlaceInAir(basePos, head);
+        else if (spec.OnWater)
         {
-            VehicleKind.Car => new GroundVehicle(false) { Name = "Voiture" },
-            VehicleKind.Bike => new GroundVehicle(true) { Name = "Vélo" },
-            VehicleKind.Boat => new Boat { Name = "Bateau" },
-            _ => new Plane { Name = "Avion" },
-        };
-
-        if (v is Plane plane && flying)
-        {
-            plane.PlaceInAir(basePos, head, 55);
-        }
-        else if (kind == VehicleKind.Boat)
-        {
-            var water = FindWater(basePos, head, out var boatHead);
+            var water = FindWater(basePos, head, spec.Length, out var boatHead);
             if (water is not Vec3d w)
             {
                 v.Free();
@@ -176,8 +180,8 @@ public partial class VehicleManager : CanvasLayer
         else
         {
             // Au sol, devant le joueur (à la verticale de la caméra si on vole)
-            double ahead = kind switch { VehicleKind.Car => 5, VehicleKind.Bike => 2.5, _ => 12 };
-            var p = flying ? up : basePos + head * ahead + right * (kind == VehicleKind.Plane ? 0 : 0.5);
+            double ahead = spec.Length / 2 + (spec.InAir ? 6 : 2.5);
+            var p = flying ? up : basePos + head * ahead + right * (spec.InAir ? 0 : 0.5);
             v.PlaceAt(p, head);
         }
 
@@ -194,19 +198,54 @@ public partial class VehicleManager : CanvasLayer
             old.QueueFree();
         }
         Camera.EnterVehicle(v);
-        Message(kind switch
+        // rappel des touches (celui du tableau de bord)
+        string hud = v.Hud();
+        int k = hud.IndexOf("   [", StringComparison.Ordinal);
+        string keys = k >= 0 ? hud[(k + 4)..].TrimEnd(']') : "";
+        string tip = spec.Family switch
         {
-            VehicleKind.Car => "Voiture : Z accélérer, S freiner / reculer, Q/D tourner, Espace frein à main",
-            VehicleKind.Bike => "Vélo : Z pédaler (Maj en danseuse), S freiner / reculer, Q/D tourner",
-            VehicleKind.Boat => "Bateau : Z avant, S arrière, Q/D gouvernail",
-            _ => flying ? "Avion en vol : S cabrer, Z piquer, Q/D roulis, Maj/Ctrl gaz" : "Avion : Maj pour mettre les gaz, S pour décoller vers 100 km/h, Q/D pour diriger au sol",
-        }, 6);
+            VehicleFamily.Plane or VehicleFamily.Jet when !flying => " — " + Loc.T("Maj pour mettre les gaz, puis S pour décoller"),
+            VehicleFamily.Helicopter when !flying => " — " + Loc.T("Maj pour lancer le rotor et monter"),
+            _ => "",
+        };
+        Message(Loc.T(spec.Name) + " : " + keys + tip, 7);
         return v;
     }
 
+    /// <summary>Test / captures : gare les véhicules <paramref name="ids"/> en rang, à 18 m devant la caméra.</summary>
+    public void Showroom(string[] ids)
+    {
+        var up = Camera.PosD.Normalized();
+        Geo.LocalFrame(up, out var east, out var north);
+        var head = north * Math.Cos(Camera.Yaw) + east * Math.Sin(Camera.Yaw);
+        var right = head.Cross(up).Normalized();
+        double width = 0;
+        var specs = new List<VehicleSpec>();
+        foreach (var id in ids) { var s = VehicleCatalog.Get(id); specs.Add(s); width += Math.Min(s.Width, 12) + 1.5; }
+        double x = -width / 2;
+        foreach (var s in specs)
+        {
+            double w = Math.Min(s.Width, 12) + 1.5;
+            var v = s.Create();
+            // de trois quarts : on voit l'avant et le flanc
+            var dir = (head * -0.7 + right * 0.7).Normalized();
+            var p = Camera.PosD + head * 18 + right * (x + w / 2);
+            if (s.OnWater) { var wp = FindWater(p, head, s.Length, out _); if (wp is Vec3d ww) p = ww; }
+            v.PlaceAt(p, dir);
+            _world.AddChild(v);
+            ApplyQuality(v);
+            _vehicles.Add(v);
+            v.Place(Camera.PosD, Camera.WorldRotation);
+            x += w;
+        }
+    }
+
+    /// <summary>Compatibilité : véhicule par identifiant du catalogue (car, bike, boat, plane, heli…).</summary>
+    public Vehicle Spawn(string id) => Spawn(VehicleCatalog.Get(id));
+
     /// <summary>Eau la plus proche : d'abord droit devant, puis en cercles jusqu'à 500 m.
     /// Le bateau est tourné vers le large (direction où l'eau continue).</summary>
-    static Vec3d? FindWater(Vec3d from, Vec3d head, out Vec3d boatHead)
+    static Vec3d? FindWater(Vec3d from, Vec3d head, double length, out Vec3d boatHead)
     {
         var up = from.Normalized();
         boatHead = head;
@@ -220,10 +259,10 @@ public partial class VehicleManager : CanvasLayer
                 var dir = head * Math.Cos(a) + right * Math.Sin(a);
                 var p = (from + dir * d).Normalized() * from.Length();
                 // il faut de l'eau sous tout le bateau, pas seulement sous un point de la rive
-                if (WaterSurface.At(p, out _) && WaterSurface.At(p + dir * 6, out _) && WaterSurface.At(p + dir.Cross(up) * 3, out _) && WaterSurface.At(p - dir.Cross(up) * 3, out _))
+                if (WaterSurface.At(p, out _) && WaterSurface.At(p + dir * length, out _) && WaterSurface.At(p + dir.Cross(up) * 3, out _) && WaterSurface.At(p - dir.Cross(up) * 3, out _))
                 {
                     boatHead = dir;
-                    return p + dir * 3;
+                    return p + dir * (length / 2);
                 }
             }
         }
@@ -256,6 +295,10 @@ public partial class VehicleManager : CanvasLayer
     public override void _Process(double delta)
     {
         _windAge += delta;
+        _audio.Update(Camera.Vehicle, delta);
+        _dashboard.Vehicle = Camera.Vehicle != null && !Camera.ThirdPerson ? Camera.Vehicle : null;
+        _message.OffsetBottom = _dashboard.Vehicle != null ? -280 : -90; // au-dessus du tableau de bord
+        _message.OffsetTop = _message.OffsetBottom;
         if (_messageTime > 0 && (_messageTime -= delta) <= 0) _message.Visible = false;
 
         foreach (var v in _vehicles)
@@ -288,8 +331,8 @@ public partial class VehicleManager : CanvasLayer
     /// (qui peut s'affiner quand les données 0,5 m arrivent).</summary>
     static void Settle(Vehicle v, double delta)
     {
-        if (v is Boat) { v.Step(new VehicleInput(), delta); return; }
-        if (v is Plane p && !p.OnGround) { v.Step(new VehicleInput(), delta); return; } // avion abandonné en vol (téléportation)
+        if (v.Spec.OnWater) { v.Step(new VehicleInput(), delta); return; }
+        if (v.Spec.InAir && !v.Grounded) { v.Step(new VehicleInput(), delta); return; } // abandonné en vol (téléportation)
         var up = v.PosD.Normalized();
         v.PosD = up * (Geo.Radius + Vehicle.Ground(v.PosD, out _));
     }

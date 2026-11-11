@@ -1,47 +1,60 @@
 using System;
-using Godot;
 
 namespace SteamEarth;
 
 /// <summary>
-/// Bateau à moteur (≈ 6 m, 1 400 kg, ~65 km/h) sur les lacs, rivières et la mer.
-/// Poussée de l'hélice contre la traînée de la coque ; le gouvernail n'agit que s'il y a de l'eau qui le traverse
-/// (vitesse ou souffle de l'hélice). La flottaison est un ressort amorti vers la surface de l'eau
-/// (<see cref="WaterSurface"/>, vagues comprises) ; la coque prend l'inclinaison des vagues sous la proue,
-/// la poupe et les flancs, se cabre en déjaugeant et s'incline dans les virages. Elle s'échoue sur la rive.
+/// Bateaux (bateau à moteur, jet-ski, voilier) sur les lacs, rivières et la mer : physique arcade.
+/// La vitesse tend vers « gaz × vitesse maximale » ; le gouvernail n'agit que s'il y a de l'eau qui le traverse
+/// (vitesse ou souffle de l'hélice). Flottaison amortie vers la surface (<see cref="WaterSurface"/>, vagues comprises),
+/// la coque prend la pente des vagues, se cabre en déjaugeant et gîte dans les virages. Elle s'échoue sur la rive.
+/// Voilier : la poussée vient du vent réel (GFS) selon l'allure — rien face au vent (moins de 35°), le mieux au
+/// travers / grand largue ; Z / S hissent ou affalent les voiles, Maj lance le petit moteur auxiliaire.
 /// </summary>
 public partial class Boat : Vehicle
 {
-    const double Mass = 1400, Thrust = 9000, Length = 6, Beam = 2.3;
-    const double QuadDrag = Thrust / (18.0 * 18.0); // vitesse maximale ≈ 18 m/s
-
     public double V;
-    double _vSide, _vUp, _throttle, _rudder, _yawRate, _prop;
-    Vec3d _heading = new(0, 0, -1);
-    bool _afloat = true, _beached;
-    Node3D _motor, _propeller, _rider;
+    double _vSide, _vUp, _rudder, _yawRate, _sails, _sailForce;
+    Vec3d _heading = new(0, 0, -1), _wind = new(0, 0, 0);
+    bool _afloat = true, _beached, _motorOn;
 
-    public override VehicleKind Kind => VehicleKind.Boat;
-    public override string Label => "Bateau";
+    public Boat(VehicleSpec spec) : base(spec) { }
+
+    bool Sail => Spec.Family == VehicleFamily.Sailboat;
     public override double Speed => V;
     public override bool CanExit => Math.Abs(V) < 2;
-    public override double Radius => 2.4;
+    public override double Radius => Spec.Width / 2 + 0.2;
     public override double BodyHeight => 2.0;
-    public override double CameraTargetHeight => 1.6;
-    public override double CameraDistance => 11;
-    public override Vec3d ExitPoint => PosD - Right * (Beam / 2 + 0.6);
+    public override Vec3d ExitPoint => PosD - Right * (Spec.Width / 2 + 0.6);
+    /// <summary>Voilier : voiles hissées 0..1.</summary>
+    public double Sails => _sails;
+    /// <summary>Vent apparent pour le tableau de bord : direction relative à l'avant (rad, + = de tribord) et force (m/s).</summary>
+    public (double angle, double speed) ApparentWind
+    {
+        get
+        {
+            var up = PosD.Normalized();
+            var aw = _wind - Tangent(_heading, up) * V;
+            var f = Tangent(_heading, up); var r = f.Cross(up).Normalized();
+            return (Math.Atan2(-aw.Dot(r), -aw.Dot(f)), (aw - up * aw.Dot(up)).Length());
+        }
+    }
+    public bool Beached => _beached;
+    public bool Afloat => _afloat;
 
     public override void PlaceAt(Vec3d pos, Vec3d heading)
     {
         base.PlaceAt(pos, heading);
         _heading = Fwd;
-        V = 0; _vSide = 0; _vUp = 0; _throttle = 0;
+        V = 0; _vSide = 0; _vUp = 0; Throttle01 = 0; _sails = 0;
     }
 
     public override void Step(VehicleInput input, double dt)
     {
         int n = Math.Clamp((int)Math.Ceiling(Math.Abs(V) * dt / 0.5), 1, 16);
         for (int i = 0; i < n; i++) SubStep(input, dt / n);
+        // régime : suit les gaz, monte un peu avec la charge
+        double target = Sail ? (_motorOn ? 0.35 : 0) : 0.12 + 0.85 * Math.Abs(Throttle01);
+        Rpm01 += (target - Rpm01) * Math.Min(1, dt * 3);
     }
 
     static double Level(Vec3d p, double fallback) => WaterSurface.At(p, out double l) ? l : fallback;
@@ -51,119 +64,126 @@ public partial class Boat : Vehicle
         var up = PosD.Normalized();
         var head = Tangent(_heading, up);
         var right = head.Cross(up).Normalized();
-        double alt = PosD.Length() - Geo.Radius;
+        double len = Spec.Length, beam = Spec.Width;
+        _wind = Wind(PosD, 10);
+        _wind -= up * _wind.Dot(up);
 
-        // Manette des gaz progressive : Z = plein avant, S = marche arrière (40 %)
-        double target = input.Throttle > 0 ? input.Throttle : input.Throttle * 0.4;
-        _throttle += Math.Clamp(target - _throttle, -0.8 * h, 0.8 * h);
+        double thrust; // accélération voulue (m/s²)
+        if (Sail)
+        {
+            // Z hisse, S affale (et un peu de marche arrière au moteur)
+            if (input.Throttle > 0) _sails = Math.Min(1, _sails + 0.4 * h);
+            if (input.Throttle < 0) _sails = Math.Max(0, _sails - 0.6 * h);
+            _motorOn = input.Boost || (input.Throttle < 0 && _sails <= 0);
+            // allure : angle entre l'avant et la provenance du vent (0 = face au vent)
+            double ws = _wind.Length();
+            double from = ws > 0.1 ? Math.Acos(Math.Clamp(-_wind.Dot(head) / ws, -1, 1)) : 0;
+            double polar = from < 0.6 ? 0 : from < 0.9 ? (from - 0.6) / 0.3 * 0.75 : from < 2.4 ? 0.75 + 0.25 * Math.Sin((from - 0.9) / 1.5 * Math.PI) : 0.75 - 0.15 * (from - 2.4) / 0.74;
+            double target = Math.Min(Spec.TopSpeed, ws * 0.55 * polar + 0.4 * polar) * _sails;
+            _sailForce = polar * _sails;
+            thrust = (target - V) * 0.25;
+            if (_motorOn) thrust += input.Throttle < 0 ? -1.0 : (3.5 - V) > 0 ? 0.6 : 0;
+            // bôme sous le vent : choquée au portant, bordée au près
+            var windSide = _wind.Dot(right); // vent qui vient de bâbord pousse vers tribord
+            double boom = Math.Clamp(Math.PI - from, 0.15, 1.35) * 0.9 * (windSide >= 0 ? 1 : -1);
+            SailAngle += (boom * _sails - SailAngle) * Math.Min(1, 1.5 * h);
+            Throttle01 = _motorOn ? (input.Throttle < 0 ? -0.6 : 0.6) : 0;
+        }
+        else
+        {
+            double target = input.Throttle > 0 ? input.Throttle : input.Throttle * 0.45;
+            Throttle01 += Math.Clamp(target - Throttle01, -0.9 * h, 0.9 * h);
+            double vTarget = Throttle01 >= 0 ? Throttle01 * Spec.TopSpeed : Throttle01 / 0.45 * Spec.Reverse;
+            double rate = (vTarget - V) * (Spec.Accel / Math.Max(Spec.TopSpeed * 0.35, 1));
+            thrust = Math.Clamp(rate, -Spec.Accel * (V > vTarget && Throttle01 < 0 ? 1.4 : 0.8), Spec.Accel);
+        }
+        Braking = false;
         _rudder += Math.Clamp(input.Steer - _rudder, -3 * h, 3 * h);
+        SteerAngle = _rudder * 0.5;
 
         _afloat = WaterSurface.At(PosD, out double level);
         if (_afloat)
         {
-            double force = _throttle * Thrust - QuadDrag * V * Math.Abs(V) - 60 * V;
-            V += force / Mass * h;
-            // Gouvernail : efficace avec la vitesse ou le souffle de l'hélice ; virage limité (≈ 0,5 g)
-            double flow = V + _throttle * 5;
-            _yawRate = _rudder * 0.45 * Math.Clamp(flow / 5, -1, 1);
-            double maxYaw = 0.5 * G / Math.Max(Math.Abs(V), 1);
+            V += thrust * h;
+            // Gouvernail : efficace avec la vitesse ou le souffle de l'hélice
+            double flow = V + Math.Abs(Throttle01) * 4;
+            _yawRate = _rudder * Spec.TurnRate * Math.Clamp(flow / 4, -1, 1);
+            double maxYaw = 0.55 * G / Math.Max(Math.Abs(V), 1);
             _yawRate = Math.Clamp(_yawRate, -maxYaw, maxYaw);
             head = Rotate(head, up, -_yawRate * h);
-            // Dérive : la coque glisse un peu dans les virages et sous le vent
-            double windSide = Wind(PosD, 2).Dot(right);
-            _vSide += (V * _yawRate * 0.08 + windSide * 0.03 - _vSide * 1.5) * h;
+            // Dérive : la coque glisse dans les virages et sous le vent (davantage le voilier)
+            double windSide = _wind.Dot(right);
+            _vSide += (V * _yawRate * 0.06 + windSide * (Sail ? 0.05 * _sails + 0.01 : 0.02) - _vSide * 1.5) * h;
+            Slip = Math.Clamp(Math.Abs(V * _yawRate) / 6, 0, 1) * (Sail ? 0 : 1); // gerbe d'eau
         }
         else
         {
-            V *= Math.Max(0, 1 - 8 * h); // à terre, on ne va nulle part
-            _vSide = 0;
+            V *= Math.Max(0, 1 - 8 * h);
+            _vSide = 0; Slip = 0;
         }
 
         // Avance, sauf si la proue touche la rive
         var next = PosD + head * (V * h) + right * (_vSide * h);
-        var bow = next + head * (Math.Sign(V == 0 ? 1 : V) * Length / 2);
+        var bow = next + head * (Math.Sign(V == 0 ? 1 : V) * len / 2);
         _beached = false;
-        if (!WaterSurface.At(bow, out _) && Ground(bow, out _) > level + 0.2)
+        if (!WaterSurface.At(bow, out _)) // la proue touche la rive (même plate) : on n'avance plus
         {
-            if (Math.Abs(V) > 3) Notice = "Échoué sur la rive !";
+            if (Math.Abs(V) > 3) { Notice = Loc.T("Échoué sur la rive !"); Impact = Math.Clamp(Math.Abs(V) / 12, 0.3, 1); }
             V *= -0.15; _vSide = 0; _beached = true;
         }
         else
         {
-            var resolved = Obstacles.Resolve(next, Radius, BodyHeight);
-            if ((resolved - next).Length() > 1e-4) { if (Math.Abs(V) > 4) Notice = "Choc !"; V *= Math.Max(0, 1 - 6 * h); }
-            PosD = resolved;
+            PosD = next;
+            if (ResolveObstacles(Radius, BodyHeight)) { if (Math.Abs(V) > 4) { Notice = Loc.T("Choc !"); Impact = Math.Clamp(Math.Abs(V) / 12, 0.3, 1); } V *= Math.Max(0, 1 - 6 * h); }
         }
 
         // Flottaison : ressort amorti vers la surface (vagues comprises)
         up = PosD.Normalized();
-        alt = PosD.Length() - Geo.Radius;
+        double alt = PosD.Length() - Geo.Radius;
         if (WaterSurface.At(PosD, out level))
         {
-            _vUp += (14 * (level - alt) - 4 * _vUp) * h;
+            double hull = level - Spec.Draft * 0.3;
+            _vUp += (14 * (hull - alt) - 4 * _vUp) * h;
             PosD += up * (_vUp * h);
         }
         else
         {
             double ground = Ground(PosD, out _);
-            PosD = up * (Geo.Radius + Math.Max(ground, alt - 0.5 * h * 9.81));
+            PosD = up * (Geo.Radius + Math.Max(ground, alt - 0.5 * h * G));
             if (PosD.Length() - Geo.Radius <= ground + 0.01) _vUp = 0;
         }
 
-        // Assiette : pente des vagues + cabrage en déjaugeant + gîte dans les virages
+        // Assiette : pente des vagues + cabrage en déjaugeant + gîte (virage, et vent dans les voiles)
         double lc = PosD.Length() - Geo.Radius;
-        double lf = Level(PosD + head * (Length / 2), lc), lb = Level(PosD - head * (Length / 2), lc);
-        double lr = Level(PosD + right * (Beam / 2), lc), ll = Level(PosD - right * (Beam / 2), lc);
-        double s = Math.Clamp(Math.Abs(V) / 14, 0, 1);
-        double trim = 0.09 * Math.Sin(s * Math.PI) + 0.03 * s;
-        double heel = Math.Clamp(V * _yawRate * 0.03, -0.25, 0.25);
-        var normal = (up - head * ((lf - lb) / Length + trim) - right * ((lr - ll) / Beam - heel)).Normalized();
+        double lf = Level(PosD + head * (len / 2), lc), lb = Level(PosD - head * (len / 2), lc);
+        double lr = Level(PosD + right * (beam / 2), lc), ll = Level(PosD - right * (beam / 2), lc);
+        double s = Math.Clamp(Math.Abs(V) / Math.Max(Spec.TopSpeed * 0.75, 1), 0, 1);
+        double trim = Sail ? 0 : 0.08 * Math.Sin(s * Math.PI) + 0.03 * s;
+        double heel = Math.Clamp(V * _yawRate * (Spec.Id == "jetski" ? -0.06 : 0.03), -0.4, 0.4);
+        if (Sail) heel += Math.Clamp(-_wind.Dot(right) * 0.025 * _sails * _sailForce, -0.35, 0.35);
+        Lean = Spec.Id == "jetski" ? -heel : 0;
+        var normal = (up - head * ((lf - lb) / len + trim) - right * ((lr - ll) / beam - heel)).Normalized();
         double k = Math.Min(1, 4 * h);
         Up = (Up * (1 - k) + normal * k).Normalized();
         _heading = head;
         Fwd = Tangent(head, Up);
-        _prop += _throttle * 60 * h;
+        Spin += (Sail ? (_motorOn ? 0.5 : 0) : Math.Abs(Throttle01) * 0.9 + 0.1) * 60 * h;
     }
 
     public override string Hud()
     {
-        string s = $"Bateau : {V * 3.6:N0} km/h ({V * 1.944:N0} nœuds)   moteur {_throttle * 100:+0;-0;0} %";
-        if (_beached) s += "   échoué";
-        else if (!_afloat) s += "   à terre";
-        return s + "   [Z avant, S arrière, Q/D gouvernail, E descendre]";
-    }
-
-    public override void _Ready()
-    {
-        var hull = Mat(new Color(0.95f, 0.95f, 0.93f), 0.4f);
-        var stripe = Mat(new Color(0.08f, 0.25f, 0.55f), 0.4f);
-        var deck = Mat(new Color(0.55f, 0.38f, 0.22f), 0.7f);
-        var dark = Mat(new Color(0.1f, 0.1f, 0.12f), 0.6f);
-        var glass = new StandardMaterial3D { AlbedoColor = new Color(0.15f, 0.2f, 0.25f, 0.5f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, Roughness = 0.1f };
-        var seat = Mat(new Color(0.85f, 0.85f, 0.8f), 0.8f);
-
-        // Coque : partie arrière rectangulaire + proue en prisme (pointe vers l'avant), en partie sous l'eau
-        Part(new BoxMesh { Size = new Vector3((float)Beam, 0.9f, 4.0f) }, hull, new Vector3(0, 0.15f, 0.9f));
-        Part(new PrismMesh { Size = new Vector3((float)Beam, 2.1f, 0.9f), LeftToRight = 0.5f }, hull, new Vector3(0, 0.15f, -2.15f), null, new Vector3(-Mathf.Pi / 2, 0, 0));
-        Part(new BoxMesh { Size = new Vector3((float)Beam + 0.02f, 0.12f, 4.0f) }, stripe, new Vector3(0, 0.45f, 0.9f));
-        Part(new BoxMesh { Size = new Vector3((float)Beam - 0.2f, 0.05f, 3.8f) }, deck, new Vector3(0, 0.6f, 0.9f));
-        Part(new BoxMesh { Size = new Vector3((float)Beam - 0.1f, 0.5f, 0.06f) }, glass, new Vector3(0, 0.95f, -0.6f), null, new Vector3(-0.5f, 0, 0)); // pare-brise
-        Part(new BoxMesh { Size = new Vector3(0.6f, 0.7f, 0.5f) }, dark, new Vector3(-0.45f, 0.95f, -0.25f)); // poste de pilotage
-        Part(new BoxMesh { Size = new Vector3(1.8f, 0.35f, 0.6f) }, seat, new Vector3(0, 0.78f, 1.9f));        // banquette arrière
-        Part(new BoxMesh { Size = new Vector3(0.5f, 0.35f, 0.5f) }, seat, new Vector3(-0.45f, 0.78f, 0.45f)); // siège du pilote
-        _motor = Pivot(new Vector3(0, 0.6f, 2.95f));
-        Part(new BoxMesh { Size = new Vector3(0.45f, 0.7f, 0.5f) }, dark, new Vector3(0, 0.25f, 0.1f), _motor);
-        Part(new BoxMesh { Size = new Vector3(0.12f, 0.9f, 0.2f) }, dark, new Vector3(0, -0.45f, 0.1f), _motor);
-        _propeller = Pivot(new Vector3(0, -0.85f, 0.25f), _motor);
-        Part(new BoxMesh { Size = new Vector3(0.42f, 0.08f, 0.03f) }, Mat(new Color(0.7f, 0.7f, 0.7f), 0.3f, 0.9f), Vector3.Zero, _propeller);
-
-        _rider = Rider(new Vector3(-0.45f, 0.96f, 0.5f), CharacterSeat.Boat);
-    }
-
-    protected override void Animate()
-    {
-        UpdateRider();
-        if (_motor != null) _motor.Rotation = new Vector3(0, (float)_rudder * 0.5f, 0);
-        if (_propeller != null) _propeller.Rotation = new Vector3(0, 0, (float)(_prop % (2 * Math.PI)));
+        string s = $"{Loc.T(Spec.Name)} : {Math.Abs(V) * 3.6:N0} km/h ({Math.Abs(V) * 1.944:N1} {Loc.T("nœuds")})";
+        if (Sail)
+        {
+            var (a, ws) = ApparentWind;
+            s += $"   {Loc.T("voiles")} {_sails * 100:N0} %   {Loc.T("vent apparent")} {ws * 1.944:N0} {Loc.T("nœuds")} {Math.Abs(a) * 180 / Math.PI:N0}° {Loc.T(a >= 0 ? "tribord" : "bâbord")}";
+            if (_sails > 0.3 && _sailForce < 0.05) s += "   " + Loc.T("face au vent : les voiles faseyent");
+            if (_motorOn) s += "   " + Loc.T("moteur");
+        }
+        else s += $"   {Loc.T("moteur")} {Throttle01 * 100:+0;-0;0} %";
+        if (_beached) s += "   " + Loc.T("échoué");
+        else if (!_afloat) s += "   " + Loc.T("à terre");
+        string keys = Sail ? "Z hisser, S affaler, Q/D barre, Maj moteur, V vue, E descendre" : "Z avant, S arrière, Q/D gouvernail, V vue, E descendre";
+        return s + "   [" + Loc.T(keys) + "]";
     }
 }
