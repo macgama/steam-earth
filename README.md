@@ -40,6 +40,8 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 | M | menu de départ : reprendre, chercher une ville du monde, ou cliquer sur la Terre |
 | O (ou F10) | menu Graphismes : niveau Bas / Moyen / Élevé / Ultra, résolution 3D, synchronisation verticale, FPS max |
 | Clic sur un nom (souris libre) / K en visant un nom | « Berne — on construit ? » : construire les bâtiments de la localité (Maj : démolir) |
+| (à pied, devant une porte) | les portes s'ouvrent toutes seules : on entre, on monte les escaliers |
+| PgUp / PgDn (dans un immeuble de 5 niveaux ou plus) | ascenseur : étage au-dessus / au-dessous |
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
@@ -379,6 +381,50 @@ Exemple : Berne (rayon 4 km) = 20 825 bâtiments, ~30 tuiles.
 | Berne, la vieille ville et la cathédrale | Lauterbrunnen | Berne agrandie, à la tombée de la nuit | Menu de départ |
 |---|---|---|---|
 | ![](docs/batiments-berne.jpg) | ![](docs/batiments-lauterbrunnen.jpg) | ![](docs/batiments-berne-nuit.jpg) | ![](docs/menu-depart.jpg) |
+
+### Fonction des bâtiments et intérieurs
+
+Chaque bâtiment reçoit une **fonction réelle** (`scripts/Buildings/BuildingKind.cs`), d'après, dans l'ordre :
+la classe OSM transmise par Overture (`building=church`, `school`, `retail`, `stadium`…), les **lieux Overture Places**
+situés dans son contour (magasins, restaurants, écoles, hôpitaux, églises… `places.pmtiles`, licence CDLA Permissive 2.0,
+usage commercial autorisé), son nom (« Kirche », « école », « Stadion »…), la zone OSM qui le contient (enceinte d'école,
+d'hôpital, de stade : `base.pmtiles`, couche `land_use`) et enfin le sous-type Overture et la taille.
+
+La fonction décide de l'aspect : **clocher** (tour et flèche à l'ouest de la nef) pour les églises, clocheton pour les
+chapelles, **coupole et minaret** pour les mosquées, coupoles des toits `dome`, **vitrines éclairées, auvents rayés et
+enseignes** (nom du commerce au-dessus de la porte) au rez-de-chaussée des magasins, grandes baies des écoles,
+bandeaux vitrés des bureaux, murs-rideaux des tours, vitraux des églises, fenêtres hautes des halles, **gradins colorés
+et pelouse tracée** des stades, serres vitrées, couleurs de façade par fonction. Les fenêtres sont alignées sur les vrais
+étages de l'intérieur.
+
+**On peut entrer dans les bâtiments** (sauf garages, cabanes, abris, réservoirs, serres et stades) :
+
+- la porte est sur une façade qui donne dehors (pas sur un mur mitoyen), le plus près du niveau de la rue ; elle s'ouvre
+  toute seule à moins de 7 m (le shader des façades l'efface et l'intérieur dessine le battant ouvert) ; des marches
+  mènent au rez-de-chaussée s'il est au-dessus du trottoir ;
+- `scripts/Buildings/InteriorBuilder.cs` génère l'intérieur (toujours le même pour un bâtiment donné) : une dalle par
+  étage (`building:levels` d'OSM, sinon d'après la hauteur), une **cage d'escalier à deux volées** par étage avec
+  garde-corps, des pièces obtenues par découpage du plan, séparées par des cloisons percées de portes, et du **mobilier
+  selon la fonction** : bancs et autel d'église, pupitres et tableau noir d'école, rayons et caisse de magasin,
+  supermarché, tables de restaurant, lits d'hôpital, bureaux, séjour / chambres / cuisine des appartements, chambres
+  d'hôtel et accueil, bibliothèques, socles et tableaux de musée, rayonnages d'entrepôt, bancs de gare, terrain et
+  paniers de la salle de sport ;
+- les nefs, halles, gares, entrepôts et supermarchés sont d'un seul tenant ; dans les immeubles, seuls les étages autour
+  du joueur sont meublés (refaits quand il change d'étage) ; **ascenseur** PgUp / PgDn dès 5 niveaux ;
+- collisions complètes : planchers et plafonds (on s'y cogne la tête), volées d'escalier (rampes), murs, cloisons,
+  meubles ; le toit reste praticable. La caméra se rapproche à l'intérieur ;
+- `scripts/Buildings/BuildingInteriors.cs` gère les intérieurs autour du joueur selon le niveau de qualité :
+
+| | Bas | Moyen | Élevé | Ultra |
+|---|---|---|---|---|
+| Intérieurs générés jusqu'à | 25 m (6 au plus) | 45 m (12) | 80 m (24) | 140 m (40) |
+| Mobilier | aucun | gros meubles | complet | complet + plantes, écrans, plafonniers |
+| Étages meublés autour du joueur | le sien | ± 1 | ± 1 | ± 2 |
+| Enseignes des commerces jusqu'à | 40 m | 80 m | 140 m | 220 m |
+
+Tests : `-- --build=46.948,7.451,500 --enter=church --shot=f.png` place le personnage devant la porte de l'église la
+plus proche (`school`, `shop`, `tall`, `any`…) ; `--stairs` le met au pied de l'escalier, et `--walktest=N` le fait
+avancer (il monte).
 
 Pistes suivantes : en Suisse, **swissBUILDINGS3D 3.0** (swisstopo, vrais toits 3D, gratuit et commercial) à
 convertir dans notre format ; collisions avec les murs en mode marche ; pas d'arbres à l'intérieur des bâtiments ;

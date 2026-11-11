@@ -238,7 +238,8 @@ public partial class FlyCamera : Camera3D
         if (ThirdPerson)
         {
             var head = Body.PosD + up * LookHeight;
-            PosD = Chase(head, CamDistance);
+            // dans un bâtiment, la caméra se rapproche (pièces, couloirs, escaliers)
+            PosD = Chase(head, BuildingInteriors.PlayerInside ? Math.Min(CamDistance, 2.4) : CamDistance);
             target = head;
         }
         else PosD = Body.PosD + up * EyeHeight;

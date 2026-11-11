@@ -27,6 +27,8 @@ public partial class Main : Node3D
     RoadLayer _roads;
     PlacesLayer _places;
     BuildingsLayer _buildings;
+    BuildingInteriors _interiors;
+    string _enterTest; int _enterStage; int _enterFrame; bool _stairsTest;
     StartMenu _start;
     VehicleManager _vehicles;
     string _spawnVehicle;
@@ -112,6 +114,8 @@ public partial class Main : Node3D
         AddChild(_menu);
         _buildings = new BuildingsLayer { Name = "Buildings", Camera = _camera, Planet = _planet, Places = _places, Political = _political, Menu = _menu };
         AddChild(_buildings);
+        _interiors = new BuildingInteriors { Name = "Interiors", Camera = _camera, Planet = _planet, Buildings = _buildings };
+        AddChild(_interiors);
         AddChild(new GraphicsApplier { Name = "GraphicsApplier", Env = _environment, Sun = _sun });
         _graphicsMenu = new GraphicsMenu { Name = "GraphicsMenu", Camera = _camera };
         AddChild(_graphicsMenu);
@@ -166,6 +170,10 @@ public partial class Main : Node3D
             // (le personnage n'apparaît qu'une fois le monde chargé) ; --climb : en tenant Espace
             if (a.StartsWith("--walktest=")) _walkTest = int.Parse(a.Substring(11));
             if (a == "--climb") _camera.AutoJump = true;
+            // --enter=church|school|shop|tall|any : une fois la ville construite, devant la porte d'un tel bâtiment ;
+            // --stairs : puis au pied de l'escalier (avec --walktest=N, il monte tout seul)
+            if (a.StartsWith("--enter=")) { _enterTest = a.Substring(8); walk = true; }
+            if (a == "--stairs") _stairsTest = true;
             if (a == "--clear") _atmosphere.ClearSky = true; // tests : sans nuages
             if (a.StartsWith("--at="))
             {
@@ -200,6 +208,35 @@ public partial class Main : Node3D
         }
     }
 
+    /// <summary>Test --enter : vrai tant que le personnage n'est pas encore placé devant la porte (ou dans l'escalier).</summary>
+    bool EnterTest()
+    {
+        bool loaded = _planet.Idle && _buildings.Idle && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 && _frames > 60;
+        switch (_enterStage)
+        {
+            case 0:
+                if (_frames % 200 == 0) GD.Print($"[Test] attente : relief {_planet.Idle} bâtiments {_buildings.Idle} ({_buildings.Status}) téléchargements {StreamedRaster.Downloading}/{PmTilesArchive.Downloading}, image {_frames}");
+                if (!loaded && _frames < 1200) return true;
+                var where = _interiors.TestDoor(_enterTest);
+                GD.Print($"[Test] devant la porte : {where ?? "aucun bâtiment trouvé"}");
+                if (where == null) { _enterTest = null; return false; }
+                _enterStage = 1; _enterFrame = _frames;
+                return true;
+            case 1:
+                if (_frames - _enterFrame < 30 || !_interiors.Idle || !_interiors.HasInteriorNear(10)) return _frames - _enterFrame < 900;
+                if (_stairsTest) GD.Print($"[Test] {_interiors.TestStairs() ?? "pas d'escalier"}");
+                _enterStage = 2; _enterFrame = _frames;
+                return true;
+            case 2:
+                if (_frames - _enterFrame < 20) return true;
+                _enterStage = 3;
+                if (_walkTest > 0) _camera.AutoForward = true; // marche tout de suite (le relief lointain peut encore charger)
+                return false;
+            default:
+                return false;
+        }
+    }
+
     async void StartBoardTest()
     {
         while (!_ride.Loaded) await ToSignal(GetTree().CreateTimer(0.5), SceneTreeTimer.SignalName.Timeout);
@@ -219,6 +256,7 @@ public partial class Main : Node3D
         _hud.Visible = !_start.IsOpen;
         _planet.SunDirWorld = _sun.GlobalTransform.Basis.Z.Normalized();
         _buildings.Night = (float)Math.Clamp((2 - _atmosphere.SunElevationDeg) / 8, 0, 1); // fenêtres allumées au crépuscule
+        _interiors.Night = _buildings.Night;
         var player = _camera.PlayerPos; // le personnage en mode marche, sinon la caméra
         double alt = player.Length() - Geo.Radius;
         double ground = _camera.Vehicle != null ? Vehicle.Ground(_camera.Vehicle.PosD, out _)
@@ -241,13 +279,14 @@ public partial class Main : Node3D
             $"Heure locale {local:HH:mm} ({local.ToString("dddd d MMMM", Fr)}, {zone}, {TimeZones.FormatOffset(offset)}{(dst ? ", heure d'été" : "")})   {utc:HH:mm} UTC{(_atmosphere.TimeOffsetHours != 0 ? $" (décalage {_atmosphere.TimeOffsetHours:+0.##;-0.##} h)" : "")}   heure solaire {(int)solarH:00}:{(int)(solarH % 1 * 60):00}   soleil {_atmosphere.SunElevationDeg:F0}° {(_atmosphere.AlwaysDay ? "(jour permanent, J)" : _atmosphere.SunElevationDeg > 0 ? "(jour)" : _atmosphere.SunElevationDeg > -6 ? "(crépuscule)" : "(nuit)")}\n" +
             $"Météo ({_weather.Status}) : {w.TemperatureC:F1} °C   vent {w.Wind10Speed * 3.6:F0} km/h du {w.Wind10FromDeg:F0}° (rafales {w.Gust * 3.6:F0})   nuages bas/moy/hauts {w.CloudLow * 100:F0}/{w.CloudMid * 100:F0}/{w.CloudHigh * 100:F0} %   {precip}   visibilité {w.VisibilityM / 1000:F1} km\n" +
             $"Océan : {_ocean.Status}{(_ocean.Underwater ? "   [SOUS L'EAU]" : "")}\n" +
-            $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status}   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
+            $"Routes et rails : {_roads.Status}{(_roads.ShowLayer ? "" : " (masqués)")}   noms de lieux : {_places.Count}{(_places.ShowLayer ? "" : " (masqués)")}   rues : {_streets.Count}   bâtiments : {_buildings.Status} ({_interiors.Status})   arrêts et gares : {_transit.Count - _transit.Airports}, aéroports : {_transit.Airports}{(_transit.ShowLayer ? "" : " (masqués)")}   horaires : {_ride.Status}   {(PmTilesArchive.Downloading > 0 ? $"téléchargement OSM ({PmTilesArchive.Downloading})" : "")}\n" +
             (_camera.Vehicle != null ? _camera.Vehicle.Hud() + "\n" : "") +
             $"FPS {Engine.GetFramesPerSecond()}   graphismes : {GraphicsQuality.Name(GraphicsQuality.Level)} (O pour changer)\n" +
             "Clic = souris  ZQSD/WASD  Espace/E monter  C/A descendre  Maj ×8  Molette vitesse  F marcher (Espace saute, Maj court, V vue arrière/1re personne, molette distance)  1-9 lieux  +/− heure  R heure réelle  J jour permanent  Tab pays  B frontières  T routes/rails  M lieu de départ  N noms des lieux et des rues  P transports (arrêts, gares, aéroports, ports)  K (ou clic sur un nom) construire la ville  H horaires / monter / descendre  O graphismes  G véhicules (E monter / descendre)";
 
         if (_shotPath != null)
         {
+            if (_enterTest != null && EnterTest()) return;
             _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
             if (_walkTest > 0 && ((_frames > _minFrames && _idleFrames > 20) || _camera.AutoForward))
             {
@@ -259,6 +298,7 @@ public partial class Main : Node3D
                 }
                 _walkTest--;
                 if (_walkTest % 10 == 0) GD.Print($"[Test] {(_camera.Vehicle != null ? _camera.Vehicle.Hud() : "marche")} : {lat:F6} {lon:F6} alt {alt:F1} sol {ground:F1} obstacles {Obstacles.Count} FPS {Engine.GetFramesPerSecond()}");
+                if (_enterTest != null && _walkTest % 10 == 0) GD.Print($"[Test] {_interiors.Status} ; {Obstacles.Describe(_camera.PlayerPos)}");
                 return;
             }
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))

@@ -28,6 +28,13 @@ public static class Obstacles
         public double Eave, HalfWidth;
         /// <summary>Faux : n'arrête pas le personnage (arbre lointain, emprise d'une route).</summary>
         public bool Solid = true;
+        /// <summary>Plancher (dalle d'étage) : on marche dessus et on s'y cogne la tête, mais il ne repousse pas
+        /// sur le côté (on passe dessous).</summary>
+        public bool Floor;
+        /// <summary>Rampe (volée d'escalier) : le dessus monte linéairement de RampLow (côté RampA) à RampHigh
+        /// (côté RampB). Solide : on y monte par le bas, on bute contre elle par le haut.</summary>
+        public Vec3d? RampA, RampB;
+        public double RampLow, RampHigh;
         /// <summary>Vrai : aucun arbre ne pousse dans cette empreinte (bâtiments, routes, voies ferrées).</summary>
         public bool Clears;
         /// <summary>Arbre dessiné par un MultiMesh : on peut le cacher s'il tombe dans une empreinte « Clears ».</summary>
@@ -44,6 +51,20 @@ public static class Obstacles
             var c = new Vec3d(0, 0, 0);
             foreach (var p in ring) c += p;
             return new() { Ring = ring, Holes = holes, Center = c * (1.0 / ring.Length), Base = baseAlt, Top = topAlt, Eave = topAlt, Clears = true };
+        }
+        /// <summary>Polygone d'intérieur (mur, meuble, dalle) : pas d'effet sur les arbres.</summary>
+        public static Shape Solid3D(Vec3d[] ring, double baseAlt, double topAlt)
+        {
+            var s = Polygon(ring, null, baseAlt, topAlt);
+            s.Clears = false;
+            return s;
+        }
+        /// <summary>Volée d'escalier : <paramref name="ring"/> = son emprise, de <paramref name="low"/> (bord a) à <paramref name="high"/> (bord b).</summary>
+        public static Shape Ramp(Vec3d[] ring, Vec3d a, Vec3d b, double low, double high)
+        {
+            var s = Solid3D(ring, low - 0.2, high);
+            s.RampA = a; s.RampB = b; s.RampLow = low; s.RampHigh = high; s.Eave = low;
+            return s;
         }
         /// <summary>Toit à pans : faîte entre <paramref name="a"/> et <paramref name="b"/>, gouttière à <paramref name="halfWidth"/> m.</summary>
         public void SetPitched(Vec3d a, Vec3d b, double ridgeAlt, double eaveAlt, double halfWidth)
@@ -182,10 +203,14 @@ public static class Obstacles
         }
     }
 
-    /// <summary>Visite les obstacles actifs des 9 cases autour de <paramref name="p"/>.</summary>
-    static IEnumerable<Shape> Near(Vec3d p)
+    /// <summary>Visite les obstacles actifs des 9 cases autour de <paramref name="p"/> dont la boîte englobante
+    /// passe à moins de <paramref name="margin"/> m du point (les intérieurs ajoutent des centaines de murs et de
+    /// meubles : on écarte d'emblée ceux qui sont loin).</summary>
+    static IEnumerable<Shape> Near(Vec3d p, double margin = 3)
     {
-        CellOf(p, out int cla, out int clo);
+        Geo.ToLatLon(p.Normalized(), out double plat, out double plon);
+        double mLat = margin / 111_320.0, mLon = margin / (111_320.0 * Math.Max(Math.Cos(plat * Math.PI / 180), 0.05));
+        int cla = (int)Math.Floor(plat * CellsPerDeg), clo = (int)Math.Floor(plon * CellsPerDeg);
         int stamp = ++_stamp;
         for (int dla = -1; dla <= 1; dla++)
         for (int dlo = -1; dlo <= 1; dlo++)
@@ -196,6 +221,7 @@ public static class Obstacles
                 var s = list[i];
                 if (s.Stamp == stamp) continue;
                 s.Stamp = stamp;
+                if (s.Ring != null && (plat < s.Lat0 - mLat || plat > s.Lat1 + mLat || plon < s.Lon0 - mLon || plon > s.Lon1 + mLon)) continue;
                 if (s.Owner is Node3D n3 && (!GodotObject.IsInstanceValid(n3) || !n3.IsVisibleInTree())) continue;
                 yield return s;
             }
@@ -240,6 +266,13 @@ public static class Obstacles
     /// <summary>Altitude du toit au point (x, y) du plan local.</summary>
     static double RoofAt(Shape s, in Local loc, double x, double y)
     {
+        if (s.RampA is Vec3d ra && s.RampB is Vec3d rb)
+        {
+            loc.P(ra, out double rax, out double ray); loc.P(rb, out double rbx, out double rby);
+            double qx = rbx - rax, qy = rby - ray, q2 = qx * qx + qy * qy;
+            double u = q2 > 0 ? Math.Clamp(((x - rax) * qx + (y - ray) * qy) / q2, 0, 1) : 0;
+            return s.RampLow + (s.RampHigh - s.RampLow) * u;
+        }
         if (s.RidgeA is not Vec3d a || s.RidgeB is not Vec3d b || s.HalfWidth <= 0) return s.Top;
         loc.P(a, out double ax, out double ay); loc.P(b, out double bx, out double by);
         double ex = bx - ax, ey = by - ay, l2 = ex * ex + ey * ey;
@@ -272,9 +305,9 @@ public static class Obstacles
         for (int iter = 0; iter < 3; iter++)
         {
             bool hit = false;
-            foreach (var s in Near(feet))
+            foreach (var s in Near(feet, radius + 1))
             {
-                if (!s.Solid) continue;
+                if (!s.Solid || s.Floor) continue;
                 if (alt >= s.Top - StepUp || alt + height <= s.Base) continue;
                 Locate(s, loc, px, py, out bool inside, out double bx, out double by, out double dist);
                 if (!inside && dist >= radius) continue;
@@ -306,7 +339,7 @@ public static class Obstacles
         if (Cells.Count == 0) return best;
         double len = p.Length(), alt = len - Geo.Radius;
         var loc = new Local(p * (1 / len));
-        foreach (var s in Near(p))
+        foreach (var s in Near(p, 1))
         {
             if (!s.Solid || s.Top < best || s.Base > alt + stepUp || s.Eave > alt + stepUp) continue;
             Locate(s, loc, 0, 0, out bool inside, out _, out _, out _);
@@ -328,7 +361,7 @@ public static class Obstacles
         double len = p.Length(), alt = len - Geo.Radius;
         var loc = new Local(p * (1 / len));
         bool any = false;
-        foreach (var s in Near(p))
+        foreach (var s in Near(p, margin + 1))
         {
             if (!s.Solid || alt > s.Top + margin || alt < s.Base - margin) continue;
             Locate(s, loc, 0, 0, out bool inside, out _, out _, out double dist);
@@ -339,5 +372,47 @@ public static class Obstacles
             roof = Math.Max(roof, r);
         }
         return any;
+    }
+
+    /// <summary>
+    /// Altitude du plafond (dessous de la dalle d'étage) au-dessus du point, s'il y en a un à moins de
+    /// <paramref name="reach"/> m au-dessus des pieds (sinon +∞) : le personnage s'y cogne la tête.
+    /// </summary>
+    public static double CeilingAbove(Vec3d feet, double reach)
+    {
+        double best = double.PositiveInfinity;
+        if (Cells.Count == 0) return best;
+        double len = feet.Length(), alt = len - Geo.Radius;
+        var loc = new Local(feet * (1 / len));
+        foreach (var s in Near(feet, 1))
+        {
+            if (!s.Solid || !s.Floor || s.Base < alt + 0.5 || s.Base > alt + reach || s.Base >= best) continue;
+            Locate(s, loc, 0, 0, out bool inside, out _, out _, out _);
+            if (inside) best = s.Base;
+        }
+        return best;
+    }
+
+    /// <summary>Diagnostic (tests) : obstacles autour du point, et ceux qui le contiennent.</summary>
+    public static string Describe(Vec3d p)
+    {
+        int n = 0, floors = 0, ramps = 0, inside = 0, solidOff = 0;
+        double len = p.Length(), alt = len - Geo.Radius;
+        var loc = new Local(p * (1 / len));
+        var sb = new System.Text.StringBuilder();
+        foreach (var s in Near(p, 2))
+        {
+            n++;
+            if (!s.Solid) { solidOff++; continue; }
+            if (s.Floor) floors++;
+            if (s.RampA != null) ramps++;
+            Locate(s, loc, 0, 0, out bool ins, out _, out _, out double dist);
+            if (ins || dist < 0.35)
+            {
+                inside++;
+                if (sb.Length < 600) sb.Append($" [{(s.Floor ? "plancher" : s.RampA != null ? "rampe" : "mur")} {(ins ? "dedans" : $"à {dist:F2}")} base {s.Base - alt:F2} haut {s.Top - alt:F2} toit {RoofAt(s, loc, 0, 0) - alt:F2}]");
+            }
+        }
+        return $"{n} proches ({solidOff} inactifs, {floors} planchers, {ramps} rampes), touchés {inside} :{sb}";
     }
 }
