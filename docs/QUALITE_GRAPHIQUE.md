@@ -24,6 +24,9 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Herbe et cailloux (`GrassDensity` / `GrassDistance`) | non | 35 % / 40 m | 70 % / 80 m | 100 % / 150 m |
 | Textures du sol (`GroundDetail`, 0–3) | 1 | 2 | 3 | 3 |
 | Bâtiments affichés jusqu'à | 10 km | 20 km | 40 km | 60 km |
+| Intérieurs des bâtiments (`InteriorRadius` / `InteriorMax`) | 25 m / 6 | 45 m / 12 | 80 m / 24 | 140 m / 40 |
+| Mobilier (`FurnitureDetail`, 0–3) / étages meublés (`InteriorFloorSpan`) | 0 / le sien | 1 / ± 1 | 2 / ± 1 | 3 / ± 2 |
+| Enseignes des commerces (`SignDistance`) | 40 m | 80 m | 140 m | 220 m |
 | Routes, noms (rayon ×) | 0,6 / 0,7 | 0,8 / 0,85 | 1 / 1 | 1,3 / 1,2 |
 | Ombres du soleil | non | 300 m, bâtiments | 1 km, + relief et arbres | 3 km, douces, + petits objets |
 | Anticrénelage | FXAA | MSAA 2× | MSAA 4× | MSAA 8× |

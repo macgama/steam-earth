@@ -43,6 +43,15 @@ public sealed record QualityProfile
     /// <summary>Facteur général pour les distances d'affichage des nouvelles couches (1 = Élevé).</summary>
     public double DrawDistanceScale { get; init; }
     public double BuildingsShowDistance { get; init; }
+    /// <summary>Intérieurs des bâtiments : générés à moins de ce rayon du joueur (m), au plus InteriorMax à la fois.</summary>
+    public double InteriorRadius { get; init; }
+    public int InteriorMax { get; init; }
+    /// <summary>Mobilier : 0 aucun, 1 gros meubles, 2 complet, 3 complet + petits objets et luminaires.</summary>
+    public int FurnitureDetail { get; init; }
+    /// <summary>Étages meublés au-dessus et au-dessous de celui du joueur (les autres : dalles et escalier seulement).</summary>
+    public int InteriorFloorSpan { get; init; }
+    /// <summary>Enseignes des magasins (nom du commerce au-dessus de la porte) jusqu'à cette distance (m).</summary>
+    public double SignDistance { get; init; }
     public double RoadsRadiusScale { get; init; }
     public double LabelsRadiusScale { get; init; }
 
@@ -153,6 +162,11 @@ public static class GraphicsQuality
             GroundDetail = P(1, 2, 3, 3),
             DrawDistanceScale = P(0.5, 0.75, 1.0, 1.4),
             BuildingsShowDistance = P(10_000.0, 20_000.0, 40_000.0, 60_000.0),
+            InteriorRadius = P(25.0, 45.0, 80.0, 140.0),
+            InteriorMax = P(6, 12, 24, 40),
+            FurnitureDetail = P(0, 1, 2, 3),
+            InteriorFloorSpan = P(0, 1, 1, 2),
+            SignDistance = P(40.0, 80.0, 140.0, 220.0),
             RoadsRadiusScale = P(0.6, 0.8, 1.0, 1.3),
             LabelsRadiusScale = P(0.7, 0.85, 1.0, 1.2),
             Shadows = l >= QualityLevel.Medium,

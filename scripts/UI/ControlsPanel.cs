@@ -31,6 +31,8 @@ public partial class ControlsPanel : PanelContainer
             ("Maj", "Courir"),
             ("{V}", "Vue arrière / première personne"),
             ("Molette", "Rapprocher ou éloigner la caméra"),
+            ("Approcher d'une porte", "Entrer dans un bâtiment (la porte s'ouvre seule) ; marcher dans l'escalier pour changer d'étage"),
+            ("Page↑ / Page↓", "Ascenseur (bâtiments de 5 étages et plus)"),
         }),
         ("Véhicules", new[]
         {

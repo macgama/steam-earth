@@ -109,6 +109,14 @@ public partial class Character : Node3D
                 PosD += dir * (dist / steps);
                 PosD = Obstacles.Resolve(PosD, BodyRadius, Height, out bool b);
                 if (b) blocked = true;
+                // marches et escaliers : on monte à chaque pas (sinon, quand les images sont lentes, le pas suivant
+                // arrive contre une marche trop haute et le personnage est repoussé)
+                if (Grounded)
+                {
+                    double surf = Obstacles.SurfaceBelow(PosD);
+                    double a = Altitude;
+                    if (surf > a && surf - a <= Obstacles.StepUp) PosD = PosD.Normalized() * (Geo.Radius + surf);
+                }
             }
             Speed = speed;
             // Le corps se tourne progressivement vers la direction de marche
@@ -124,6 +132,14 @@ public partial class Character : Node3D
         else if (jump && Grounded) { _verticalSpeed = JumpSpeed; Grounded = false; }
         if (!Climbing) _verticalSpeed -= Gravity * dt;
         PosD += PosD.Normalized() * (_verticalSpeed * dt);
+        // Plafond (dalle de l'étage au-dessus, dans un bâtiment) : on s'y cogne la tête
+        double ceiling = Obstacles.CeilingAbove(PosD, Height + 1.5);
+        if (Altitude + Height > ceiling)
+        {
+            PosD = PosD.Normalized() * (Geo.Radius + ceiling - Height);
+            if (_verticalSpeed > 0) _verticalSpeed = 0;
+            Climbing = false;
+        }
 
         // Contrainte au sol (gravité radiale : « haut » = direction opposée au centre de la Terre)
         up = PosD.Normalized();

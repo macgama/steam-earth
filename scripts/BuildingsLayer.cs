@@ -53,8 +53,10 @@ public partial class BuildingsLayer : Node3D
         return LitByHour[^1].f;
     }
 
-    public const string Attribution = "bâtiments : OSM, Microsoft, Google Open Buildings (CC BY 4.0), USGS";
+    public const string Attribution = "bâtiments : OSM, Microsoft, Google Open Buildings (CC BY 4.0), USGS ; commerces : Overture Places (CDLA Permissive 2.0)";
     const int Zoom = 14, MaxBuilds = 3;
+    /// <summary>Les portes s'ouvrent toutes seules quand le joueur est à moins de cette distance (m).</summary>
+    public const double DoorOpenDistance = 7;
     // Distances selon le niveau de qualité graphique (Élevé : 40 km / 60 km)
     static double ShowDistance => GraphicsQuality.Current.BuildingsShowDistance;
     static double LoadDistance => GraphicsQuality.Current.BuildingsShowDistance * 1.5;
@@ -80,7 +82,8 @@ public partial class BuildingsLayer : Node3D
         public Vec3d Center; public double HalfSize;
         public bool Loading, Ready, Dead, Incomplete;
         public int BuiltVersion, Stamp, BuiltStamp;
-        public byte[] Mvt;
+        public byte[] Mvt, Places, Land;
+        public List<BuildingInfo> Infos;
         public Vec3d Origin;
         public MeshInstance3D Mesh;
         public double LastBuild;
@@ -93,7 +96,7 @@ public partial class BuildingsLayer : Node3D
     readonly Dictionary<(int, int), Tile> _tiles = new();
     readonly ConcurrentQueue<(Tile tile, BuildingMeshData data, City[] cities, int stamp)> _done = new();
     readonly List<Target> _targets = new();
-    Task<PmTilesArchive> _archive;
+    Task<PmTilesArchive> _archive, _placesArchive, _baseArchive;
     ShaderMaterial _mat;
     int _building;
     bool _wanting;
@@ -130,6 +133,8 @@ public partial class BuildingsLayer : Node3D
         GraphicsQuality.Changed += OnQualityChanged;
         _mat = new ShaderMaterial { Shader = new Shader { Code = Shader } };
         _archive = Overture.OpenAsync("buildings");
+        _placesArchive = Overture.OpenAsync("places"); // commerces, écoles, églises… (fonction des bâtiments)
+        _baseArchive = Overture.OpenAsync("base");     // zones OSM : écoles, hôpitaux, stades (zoom 13)
         try
         {
             if (File.Exists(SavePath))
@@ -259,6 +264,11 @@ public partial class BuildingsLayer : Node3D
         }
         _mat.SetShaderParameter("night", Night);
         _mat.SetShaderParameter("lit_fraction", (float)LitFraction(LocalHour));
+        double h = ((LocalHour % 24) + 24) % 24;
+        _mat.SetShaderParameter("shop_lit", h >= 7 && h < 21.5 ? 1f : 0.15f); // vitrines éclairées aux heures d'ouverture
+        // portes : effacées près du joueur (l'intérieur dessine alors la porte ouverte)
+        _mat.SetShaderParameter("player_world", Planet.GlobalTransform * (player - cam).ToVector3());
+        _mat.SetShaderParameter("door_open", (float)DoorOpenDistance);
         UpdateHover();
     }
 
@@ -331,6 +341,8 @@ public partial class BuildingsLayer : Node3D
         _building++;
         t.LastBuild = _clock;
         var archive = _archive.Result;
+        var placesArchive = _placesArchive;
+        var baseArchive = _baseArchive;
         var cities = t.Cities.ToArray();
         var areas = Array.ConvertAll(cities, c => new BuildingBuilder.Area(c.Dir, c.Radius));
         int stamp = t.Stamp;
@@ -340,8 +352,20 @@ public partial class BuildingsLayer : Node3D
             try
             {
                 t.Mvt ??= await archive.GetTileAsync(Zoom, t.X, t.Y) ?? Array.Empty<byte>();
+                // Fonction des bâtiments : lieux Overture (même tuile) et zones OSM (tuile de zoom 13 qui la contient).
+                // Hors ligne sans cache : les bâtiments se construisent quand même, d'après leur seule classe.
+                if (t.Places == null)
+                {
+                    try { var pa = await placesArchive; t.Places = pa != null ? await pa.GetTileAsync(Zoom, t.X, t.Y) ?? Array.Empty<byte>() : Array.Empty<byte>(); }
+                    catch (Exception) { t.Places = Array.Empty<byte>(); }
+                }
+                if (t.Land == null)
+                {
+                    try { var ba = await baseArchive; t.Land = ba != null ? await ba.GetTileAsync(Zoom - 1, t.X >> 1, t.Y >> 1) ?? Array.Empty<byte>() : Array.Empty<byte>(); }
+                    catch (Exception) { t.Land = Array.Empty<byte>(); }
+                }
                 // Relief à 4 m : précis à 1 m près, et léger à télécharger en Suisse (aperçu swissALTI3D)
-                data = BuildingBuilder.Build(t.Mvt, Zoom, t.X, t.Y, areas, 4);
+                data = BuildingBuilder.Build(t.Mvt, t.Places, t.Land, Zoom - 1, t.X >> 1, t.Y >> 1, Zoom, t.X, t.Y, areas, 4);
             }
             catch (Exception e) { GD.PrintErr($"[Buildings] tuile {Zoom}/{t.X}/{t.Y} : {e.Message}"); }
             _done.Enqueue((t, data, cities, stamp));
@@ -381,6 +405,8 @@ public partial class BuildingsLayer : Node3D
         }
         t.Mesh.Mesh = mesh;
         Obstacles.Set(t.Mesh, data.Footprints);
+        t.Infos = data.Infos;
+        InfosVersion++;
         t.Ready = true;
     }
 
@@ -388,7 +414,40 @@ public partial class BuildingsLayer : Node3D
     {
         t.Dead = true;
         t.Mesh?.QueueFree();
-        t.Mesh = null; t.Mvt = null;
+        t.Mesh = null; t.Mvt = null; t.Places = null; t.Land = null; t.Infos = null;
+        InfosVersion++;
+    }
+
+    /// <summary>Change à chaque tuile installée ou retirée (les intérieurs vérifient alors leurs bâtiments).</summary>
+    public int InfosVersion { get; private set; }
+
+    /// <summary>Bâtiments où l'on peut entrer dont le contour passe à moins de <paramref name="radius"/> m de <paramref name="p"/>
+    /// (distance au cercle englobant), avec cette distance.</summary>
+    public void InfosNear(Vec3d p, double radius, List<(BuildingInfo info, double dist)> result)
+    {
+        var dir = p.Normalized();
+        foreach (var t in _tiles.Values)
+        {
+            if (t.Infos == null || t.Mesh == null || !t.Mesh.Visible) continue;
+            if ((t.Center - dir).Length() * Geo.Radius - t.HalfSize * 1.5 > radius) continue;
+            foreach (var b in t.Infos)
+            {
+                double d = (b.Frame.C - dir).Length() * Geo.Radius - b.BoundRadius;
+                if (d <= radius) result.Add((b, Math.Max(d, 0)));
+            }
+        }
+    }
+
+    /// <summary>Bâtiment (actuel) qui porte cet identifiant, près de <paramref name="p"/>.</summary>
+    public BuildingInfo FindInfo(string id, Vec3d p)
+    {
+        var dir = p.Normalized();
+        foreach (var t in _tiles.Values)
+        {
+            if (t.Infos == null || (t.Center - dir).Length() * Geo.Radius - t.HalfSize * 1.5 > 500) continue;
+            foreach (var b in t.Infos) if (b.Id == id) return b;
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ invite « on construit ? »
@@ -442,37 +501,110 @@ public partial class BuildingsLayer : Node3D
         GetViewport().SetInputAsHandled(); // le clic ne capture pas la souris
     }
 
-    // Murs éclairés par le soleil ; fenêtres dessinées selon (abscisse le long du mur, hauteur), allumées la nuit.
+    // Murs éclairés par le soleil ; fenêtres dessinées selon (abscisse le long du mur, étage), allumées la nuit.
+    // UV2.x = motif (WindowStyle) : fenêtres d'habitation, bandeaux de bureaux, vitraux d'église, vitrines,
+    // baies d'école, mur-rideau, porte (effacée près du joueur), gradins, pelouse, auvent rayé.
+    // Vues de l'intérieur (face arrière), les vitres laissent voir le jour.
     const string Shader = @"
 shader_type spatial;
 render_mode cull_disabled;
 uniform float night = 0.0;
 uniform float lit_fraction = 0.5;
+uniform float shop_lit = 1.0;
+uniform vec3 player_world = vec3(0.0, -1e9, 0.0);
+uniform float door_open = 7.0;
+varying vec3 wpos;
+void vertex() {
+    wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
 // hachage sans sinus (précis même avec de grandes coordonnées : pas de grain dans les fenêtres)
 float hash(vec3 p) {
     p = fract(mod(p, 4096.0) * 0.1031);
     p += dot(p, p.zyx + 31.32);
     return fract((p.x + p.y) * p.z);
 }
+float box(vec2 f, float x0, float x1, float y0, float y1) {
+    return step(x0, f.x) * step(f.x, x1) * step(y0, f.y) * step(f.y, y1);
+}
 void fragment() {
     vec3 base = pow(COLOR.rgb, vec3(2.2));
     ROUGHNESS = 0.9;
     SPECULAR = 0.25;
-    if (UV2.x > 0.5) {
-        vec2 cell = vec2(UV.x / 3.2, UV.y / 3.0);
+    int style = int(UV2.x + 0.5);
+    float seed = UV2.y;
+    if (style == 0) { ALBEDO = base; }
+    else if (style == 8) {
+        // porte d'entrée : effacée quand le joueur s'approche (il voit l'intérieur, la porte ouverte)
+        if (distance(wpos, player_world) < door_open) discard;
+        float panel = step(0.5, fract(UV.y / 0.5)) * 0.12;
+        float glass = step(1.45, UV.y) * step(UV.y, 1.95) * step(0.12, fract(UV.x / 0.55));
+        ALBEDO = mix(base * (0.9 + panel), vec3(0.06, 0.07, 0.09), glass);
+        ROUGHNESS = mix(0.6, 0.2, glass);
+    } else if (style == 10) {
+        // gradins : rangées de sièges séparées par des marches de béton
+        float row = fract(UV.y / 0.45);
+        ALBEDO = mix(base, vec3(0.45), step(0.72, row));
+    } else if (style == 11) {
+        // pelouse tondue en bandes
+        float band = step(0.5, fract(UV.x / 5.5));
+        ALBEDO = base * mix(0.85, 1.08, band);
+        ROUGHNESS = 1.0;
+    } else if (style == 13) {
+        // toile d'auvent rayée
+        ALBEDO = mix(base, vec3(0.85, 0.83, 0.78), step(0.5, fract(UV.x / 0.45)));
+        ROUGHNESS = 1.0;
+    } else {
+        float cw = style == 3 ? 4.0 : 3.2;
+        vec2 cell = vec2(UV.x / cw, UV.y / 3.0);
         vec2 f = fract(cell);
-        float win = step(0.30, f.x) * step(f.x, 0.72) * step(0.32, f.y) * step(f.y, 0.78) * step(0.5, UV.y);
+        float lvl = floor(cell.y);
+        float above = step(0.0, UV.y);
+        float win = 0.0;
+        bool shop = false;
+        if ((style == 4 || style == 9) && lvl < 0.5) {
+            // vitrine au rez-de-chaussée
+            win = box(f, 0.06, 0.94, 0.05, 0.80) * (1.0 - box(vec2(fract(UV.x / 1.6), f.y), 0.0, 0.025, 0.0, 1.0));
+            shop = true;
+        } else if (style == 1 || style == 4) {
+            win = box(f, 0.30, 0.72, 0.32, 0.78);
+        } else if (style == 2 || style == 9) {
+            win = box(f, 0.0, 1.0, 0.30, 0.86) * step(0.05, fract(UV.x / 1.6));
+        } else if (style == 3) {
+            // vitraux : hautes fenêtres à arc
+            vec2 q = vec2((f.x - 0.5) / 0.13, (f.y - 0.62) / 0.12);
+            win = max(box(f, 0.37, 0.63, 0.16, 0.62), step(length(q), 1.0) * step(0.62, f.y));
+        } else if (style == 5) {
+            win = box(f, 0.0, 1.0, 0.72, 0.88) * step(0.06, fract(UV.x / 1.2));
+        } else if (style == 6) {
+            win = box(f, 0.06, 0.94, 0.28, 0.86) * (1.0 - box(f, 0.49, 0.51, 0.0, 1.0));
+        } else if (style == 7) {
+            win = (1.0 - step(fract(UV.x / 1.5), 0.04)) * (1.0 - step(f.y, 0.07));
+        } else if (style == 12) {
+            win = box(f, 0.18, 0.82, 0.14, 0.88) * step(0.05, fract(UV.x / 0.8));
+        }
+        win *= above;
         // au loin, les fenêtres se fondent dans la façade (pas de scintillement)
         float blur = clamp(max(fwidth(cell.x), fwidth(cell.y)) * 2.5 - 0.5, 0.0, 1.0);
-        float m = mix(win, 0.2, blur);
+        float m = mix(win, style == 7 ? 0.8 : 0.2, blur);
         vec3 glass = vec3(0.05, 0.065, 0.08);
+        if (style == 3) glass = mix(vec3(0.10, 0.12, 0.28), vec3(0.30, 0.10, 0.10), step(0.5, hash(vec3(floor(cell), 3.0))));
+        if (shop) glass = vec3(0.16, 0.14, 0.11); // vitrine : on devine l'intérieur éclairé
+        if (!FRONT_FACING) glass = mix(vec3(0.55, 0.68, 0.85), vec3(0.03, 0.04, 0.07), night); // vu de l'intérieur : le jour dehors
         ALBEDO = mix(base, glass, m);
         ROUGHNESS = mix(0.9, 0.25, m);
         // chaque fenêtre a sa valeur fixe : quand la part allumée baisse (nuit), ce sont toujours les mêmes qui s'éteignent
-        float lit = step(1.0 - lit_fraction, hash(vec3(floor(cell), floor(UV2.y * 997.0))));
-        EMISSION = vec3(1.0, 0.70, 0.36) * 0.9 * night * mix(win * lit, 0.2 * lit_fraction, blur);
-    } else {
-        ALBEDO = base;
+        float lit = step(1.0 - lit_fraction, hash(vec3(floor(cell), floor(seed * 997.0))));
+        vec3 warm = vec3(1.0, 0.70, 0.36);
+        if (shop) {
+            EMISSION = vec3(1.0, 0.86, 0.62) * mix(0.25, 1.2, night) * shop_lit * mix(win, 0.3, blur);
+        } else if (style == 3) {
+            EMISSION = vec3(0.9, 0.6, 0.35) * 0.35 * night * win * step(0.6, lit_fraction + 0.3);
+        } else {
+            EMISSION = warm * 0.9 * night * mix(win * lit, 0.2 * lit_fraction, blur);
+        }
+        if (!FRONT_FACING) EMISSION = vec3(0.55, 0.68, 0.85) * 0.6 * (1.0 - night) * win;
     }
+    // vu de l'intérieur (face arrière) : le mur est éclairé par la pièce, pas par le soleil du dehors
+    if (!FRONT_FACING) EMISSION += ALBEDO * mix(0.55, 0.40, night);
 }";
 }
