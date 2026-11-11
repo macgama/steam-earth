@@ -36,6 +36,8 @@ public sealed record QualityProfile
     public float GrassDensity { get; init; }
     /// <summary>Herbe et cailloux visibles jusqu'à (m).</summary>
     public float GrassDistance { get; init; }
+    /// <summary>Brins par touffe d'herbe (plus = herbe plus fine et fournie de près).</summary>
+    public int GrassBlades { get; init; }
     /// <summary>Textures du sol : 0 = couleurs seules, 1 = texture simple, 2 = détail + normal map, 3 = détail complet (mélanges, relief).</summary>
     public int GroundDetail { get; init; }
 
@@ -53,6 +55,10 @@ public sealed record QualityProfile
     /// <summary>Enseignes des magasins (nom du commerce au-dessus de la porte) jusqu'à cette distance (m).</summary>
     public double SignDistance { get; init; }
     public double RoadsRadiusScale { get; init; }
+    /// <summary>Accotement en gravier de chaque côté des routes goudronnées (m, 0 = aucun), bord fondu dans l'herbe.</summary>
+    public float RoadShoulder { get; init; }
+    /// <summary>Murets de pierre le long des routes en pente (talus amont, remblai aval).</summary>
+    public bool RoadWalls { get; init; }
     public double LabelsRadiusScale { get; init; }
 
     // ---- Ombres du soleil
@@ -68,6 +74,14 @@ public sealed record QualityProfile
     public Viewport.Msaa Msaa { get; init; }
     public Viewport.ScreenSpaceAAEnum ScreenSpaceAA { get; init; }
     public bool Ssao { get; init; }
+    /// <summary>Éclairage indirect en espace écran (lumière renvoyée par les murs et le sol). Forward+ seulement.</summary>
+    public bool Ssil { get; init; }
+    /// <summary>Taille apparente du soleil (degrés) : &gt; 0 = ombres douces dont le flou grandit avec la distance.</summary>
+    public float SunAngularSize { get; init; }
+    /// <summary>Brume au fond des vallées (brouillard en hauteur), facteur de densité (0 = aucune).</summary>
+    public float ValleyHaze { get; init; }
+    /// <summary>Brouillard volumétrique (rayons du soleil dans la brume). Forward+ seulement.</summary>
+    public bool VolumetricFog { get; init; }
     public bool Glow { get; init; }
     /// <summary>Résolution 3D par défaut de ce niveau (le joueur peut la changer à part).</summary>
     public float DefaultRenderScale { get; init; }
@@ -159,6 +173,7 @@ public static class GraphicsQuality
             VegetationDensity = P(0.4f, 0.7f, 1f, 1f),
             GrassDensity = P(0f, 0.35f, 0.7f, 1f),
             GrassDistance = P(0f, 40f, 80f, 150f),
+            GrassBlades = P(0, 9, 13, 18),
             GroundDetail = P(1, 2, 3, 3),
             DrawDistanceScale = P(0.5, 0.75, 1.0, 1.4),
             BuildingsShowDistance = P(10_000.0, 20_000.0, 40_000.0, 60_000.0),
@@ -169,13 +184,15 @@ public static class GraphicsQuality
             SignDistance = P(40.0, 80.0, 140.0, 220.0),
             RoadsRadiusScale = P(0.6, 0.8, 1.0, 1.3),
             LabelsRadiusScale = P(0.7, 0.85, 1.0, 1.2),
+            RoadShoulder = P(0f, 0.5f, 0.7f, 0.8f),
+            RoadWalls = l >= QualityLevel.Medium,
             Shadows = l >= QualityLevel.Medium,
             ShadowMaxDistance = P(0f, 300f, 1_000f, 3_000f),
             ShadowAtlasSize = P(1024, 2048, 4096, 8192),
             ShadowSplits = P(DirectionalLight3D.ShadowMode.Orthogonal, DirectionalLight3D.ShadowMode.Parallel2Splits,
                              DirectionalLight3D.ShadowMode.Parallel4Splits, DirectionalLight3D.ShadowMode.Parallel4Splits),
-            ShadowFilter = P(RenderingServer.ShadowQuality.Hard, RenderingServer.ShadowQuality.SoftVeryLow,
-                             RenderingServer.ShadowQuality.SoftLow, RenderingServer.ShadowQuality.SoftHigh),
+            ShadowFilter = P(RenderingServer.ShadowQuality.Hard, RenderingServer.ShadowQuality.SoftLow,
+                             RenderingServer.ShadowQuality.SoftMedium, RenderingServer.ShadowQuality.SoftUltra),
             ShadowCasters = P(Array.Empty<ShadowCaster>(),
                               new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles },
                               new[] { ShadowCaster.Buildings, ShadowCaster.Vehicles, ShadowCaster.Trees, ShadowCaster.Terrain },
@@ -183,6 +200,10 @@ public static class GraphicsQuality
             Msaa = P(Viewport.Msaa.Disabled, Viewport.Msaa.Msaa2X, Viewport.Msaa.Msaa4X, Viewport.Msaa.Msaa8X),
             ScreenSpaceAA = P(Viewport.ScreenSpaceAAEnum.Fxaa, Viewport.ScreenSpaceAAEnum.Disabled, Viewport.ScreenSpaceAAEnum.Disabled, Viewport.ScreenSpaceAAEnum.Disabled),
             Ssao = l >= QualityLevel.High,
+            Ssil = l >= QualityLevel.Ultra,
+            SunAngularSize = P(0f, 0f, 0.5f, 0.53f),
+            ValleyHaze = P(0f, 0f, 1f, 1.2f),
+            VolumetricFog = l >= QualityLevel.Ultra,
             Glow = l >= QualityLevel.Medium,
             DefaultRenderScale = P(0.8f, 1f, 1f, 1f),
             WaterWaves = P(16, 32, 48, 64),

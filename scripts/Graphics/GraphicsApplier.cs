@@ -46,6 +46,14 @@ public partial class GraphicsApplier : Node
         if (Env != null)
         {
             Env.SsaoEnabled = forward && q.Ssao;   // occlusion ambiante : Forward+ seulement
+            if (Env.SsaoEnabled)
+            {
+                // ombre de contact au pied des murs, sous les avant-toits et entre les brins d'herbe
+                Env.SsaoRadius = q.Level >= QualityLevel.Ultra ? 1.6f : 1.2f;
+                Env.SsaoIntensity = 2.2f;
+                Env.SsaoDetail = 0.6f;
+            }
+            Env.SsilEnabled = forward && q.Ssil;   // lumière renvoyée par les murs et le sol
             Env.GlowEnabled = !compat && q.Glow;
         }
 
@@ -57,6 +65,8 @@ public partial class GraphicsApplier : Node
             Sun.ShadowBias = 0.05f;
             Sun.ShadowNormalBias = 1.5f;
             Sun.DirectionalShadowBlendSplits = q.Level >= QualityLevel.High;
+            // ombres douces : pénombre réelle du soleil (nette au pied d'un objet, floue au bout de son ombre)
+            Sun.LightAngularDistance = compat ? 0f : q.SunAngularSize;
             RenderingServer.DirectionalShadowAtlasSetSize(q.ShadowAtlasSize, true);
             RenderingServer.DirectionalSoftShadowFilterSetQuality(q.ShadowFilter);
         }

@@ -58,6 +58,8 @@ public partial class Atmosphere : Node3D
     ShaderMaterial _globalMat;
     ImageTexture _coverTex;
     double _coverAge = 1e9;
+    // Brume de vallée : altitude du fond de vallée autour du joueur (relevée toutes les 3 s)
+    double _valleyFloor = double.NaN, _valleyAge = 1e9;
     GpuParticles3D _rain, _snow;
     NoiseTexture2D _noise;
 
@@ -174,6 +176,56 @@ public partial class Atmosphere : Node3D
         }
     }
 
+    /// <summary>
+    /// Brume de vallée (Élevé, Ultra) : vue d'en haut (montagne, avion), le fond des vallées est voilé, surtout le matin
+    /// et par temps humide. Brouillard « en hauteur » de Godot (repère monde : +Y = haut du joueur, 0 = la caméra).
+    /// Quand le joueur est lui-même dans la brume, c'est le brouillard de distance qui travaille : on l'efface.
+    /// En Ultra, brouillard volumétrique léger : les rayons du soleil se voient dans l'air humide.
+    /// </summary>
+    void UpdateValleyHaze(double delta, Vec3d up, double lat, double lon, double alt, double vis, float sunElev, float day, float fogDensity, bool space)
+    {
+        var q = GraphicsQuality.Current;
+        bool forward = RenderingServer.GetCurrentRenderingMethod() == "forward_plus";
+        if (q.ValleyHaze <= 0 || space)
+        {
+            Env.FogHeightDensity = 0;
+            Env.VolumetricFogEnabled = false;
+            return;
+        }
+        _valleyAge += delta;
+        if (_valleyAge > 3 || double.IsNaN(_valleyFloor))
+        {
+            _valleyAge = 0;
+            // fond de vallée : point le plus bas du relief sur deux cercles (1 et 3 km) autour du joueur
+            double floor = HeightProvider.SurfaceHeight(lat, lon, 30);
+            foreach (double r in new[] { 1000.0, 3000.0 })
+                for (int k = 0; k < 12; k++)
+                {
+                    double a = k * Math.PI / 6;
+                    double la = lat + r * Math.Cos(a) / 111_320, lo = lon + r * Math.Sin(a) / (111_320 * Math.Max(0.05, Math.Cos(lat * Math.PI / 180)));
+                    floor = Math.Min(floor, HeightProvider.SurfaceHeight(la, lo, 30));
+                }
+            _valleyFloor = Math.Max(floor, 0);
+        }
+        // plus épaisse le matin (soleil bas) et quand l'air est humide (visibilité réduite)
+        float morning = 1 - Math.Clamp(sunElev / 25f, 0, 1);
+        float humid = (float)Math.Clamp(1 - (vis - 4000) / 26000, 0, 1);
+        double top = _valleyFloor + 120 + 280 * Math.Max(morning, humid); // haut de la nappe de brume
+        double above = alt - top;                                         // le joueur au-dessus de la nappe
+        float fromAbove = (float)Math.Clamp(above / 300, 0, 1);
+        float dens = 0.004f * q.ValleyHaze * (0.35f + 0.65f * Math.Max(morning, humid)) * fromAbove * Math.Max(day, 0.15f);
+        Env.FogHeight = (float)(top - alt);
+        Env.FogHeightDensity = dens;
+        Env.VolumetricFogEnabled = forward && q.VolumetricFog;
+        if (Env.VolumetricFogEnabled)
+        {
+            Env.VolumetricFogDensity = Math.Clamp(fogDensity * 0.6f, 0.0004f, 0.006f);
+            Env.VolumetricFogAnisotropy = 0.6f;   // diffusion vers l'avant : halo et rayons autour du soleil
+            Env.VolumetricFogLength = 256;
+            Env.VolumetricFogAlbedo = new Color(0.9f, 0.92f, 0.95f);
+        }
+    }
+
     public override void _Process(double delta)
     {
         var utc = GameUtc;
@@ -233,6 +285,7 @@ public partial class Atmosphere : Node3D
         Env.FogEnabled = !space;
         Env.FogDensity = (float)(fogDensity * airDecay);
         Env.FogLightColor = night.Lerp(new Color(0.62f, 0.68f, 0.76f).Lerp(new Color(0.7f, 0.7f, 0.72f), overcast), day);
+        UpdateValleyHaze(delta, up, lat, lon, alt, vis, (float)SunElevationDeg, day, (float)fogDensity, space);
 
         // --- Couches de nuages locales
         float localFade = (float)Math.Clamp(1 - (alt - 20_000) / 20_000, 0, 1);

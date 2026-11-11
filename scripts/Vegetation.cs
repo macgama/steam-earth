@@ -31,7 +31,7 @@ public static class Vegetation
     public const int SpeciesCount = 10;
 
     /// <summary>Saison de la végétation (hémisphère nord ; inversée au sud) : 0 = été … 1 = automne, 2 = hiver, 3 = printemps.</summary>
-    static int Season(double lat, DateTime utc)
+    internal static int Season(double lat, DateTime utc)
     {
         int doy = utc.DayOfYear;
         if (lat < 0) doy = (doy + 182) % 365 + 1;

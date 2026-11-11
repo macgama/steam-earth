@@ -94,7 +94,7 @@ public partial class Main : Node3D
         AddChild(_weather);
         _atmosphere = new Atmosphere { Name = "Atmosphere", Camera = _camera, Planet = _planet, Weather = _weather, Sun = _sun, Env = _environment };
         // Herbe, rochers et cailloux autour du joueur (enfant de la planète : même repère que le terrain)
-        _ground = new GroundCover { Name = "GroundCover", Camera = _camera, Atmosphere = _atmosphere };
+        _ground = new GroundCover { Name = "GroundCover", Camera = _camera, Atmosphere = _atmosphere, Planet = _planet };
         _planet.AddChild(_ground);
         AddChild(_atmosphere);
         // Océans : houle réelle (NOAA GFS-Wave) et fonds marins (GEBCO) ; après Atmosphere (brouillard sous l'eau)

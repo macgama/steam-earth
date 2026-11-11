@@ -34,6 +34,23 @@ public partial class Planet : Node3D
 
 
     ImageTexture _snowTex;
+    Image _snowImg;
+
+    /// <summary>Part du sol couverte de neige (0 à 1) à cet endroit et cette altitude : même calcul que le shader
+    /// du terrain (weather_snow), pour que l'herbe disparaisse sous la même neige.</summary>
+    public float SnowCover(double lat, double lon, double h)
+    {
+        var img = _snowImg;
+        if (img == null) return 0;
+        int x = Math.Clamp((int)Math.Floor(((lon % 360) + 360) % 360 + 0.5) % 360, 0, img.GetWidth() - 1);
+        int y = Math.Clamp((int)Math.Floor(90 - lat + 0.5), 0, img.GetHeight() - 1);
+        var sm = img.GetPixel(x, y);
+        double dh = h - sm.G;
+        double t = sm.B - 0.0065 * dh;
+        double depth = sm.R * Math.Exp(Math.Clamp(dh / 600, -6, 3));
+        static double Smooth(double a, double b, double v) { double k = Math.Clamp((v - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); }
+        return (float)(Smooth(0.005, 0.06, depth) * (1 - Smooth(274, 277.5, t)));
+    }
     DateTime _snowUpdated = DateTime.MinValue;
     DateTime _snowRun;
 
@@ -45,6 +62,7 @@ public partial class Planet : Node3D
         _snowUpdated = DateTime.UtcNow;
         _snowRun = weather.RunTime;
         var img = weather.SnowMap(utc);
+        _snowImg = img;
         _material.SetShaderParameter("snow_enabled", img != null ? 1.0f : 0.0f);
         if (img == null) return;
         if (_snowTex == null) { _snowTex = ImageTexture.CreateFromImage(img); _material.SetShaderParameter("snow_map", _snowTex); }

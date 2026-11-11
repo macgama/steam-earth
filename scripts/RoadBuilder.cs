@@ -39,11 +39,16 @@ public static class RoadBuilder
     readonly record struct Style(float Width, Color Color, int Priority, Surface Kind, bool Rail = false);
 
     /// <summary>Revêtement dessiné par le shader (stocké dans l'alpha de la couleur de sommet).</summary>
-    public enum Surface { MarkedAsphalt = 0, Asphalt = 1, Paved = 2, Gravel = 3, Dirt = 4, Ballast = 5, Steel = 6 }
+    public enum Surface { MarkedAsphalt = 0, Asphalt = 1, Paved = 2, Gravel = 3, Dirt = 4, Ballast = 5, Steel = 6,
+        /// <summary>Accotement en gravier : bord extérieur à gauche (UV.x = 0) ou à droite (UV.x = 1), fondu dans l'herbe.</summary>
+        ShoulderLeft = 7, ShoulderRight = 8,
+        /// <summary>Muret de pierre (talus ou remblai) : UV.x = hauteur (m), UV.y = longueur (m).</summary>
+        StoneWall = 9 }
 
     static readonly Color Asphalt = new(0.40f, 0.40f, 0.42f), AsphaltLight = new(0.48f, 0.48f, 0.49f);
     static readonly Color Gravel = new(0.62f, 0.56f, 0.45f), Dirt = new(0.55f, 0.45f, 0.32f);
     static readonly Color Paved = new(0.60f, 0.58f, 0.55f), Ballast = new(0.64f, 0.60f, 0.54f);
+    static readonly Color Shoulder = new(0.52f, 0.49f, 0.43f), Stone = new(0.55f, 0.53f, 0.49f);
 
     static Style? StyleFor(string subtype, string cls)
     {
@@ -158,6 +163,7 @@ public static class RoadBuilder
     {
         var data = new RoadMeshData { DataVersion = StreamedRaster.DataVersion, Clearings = new List<Obstacles.Shape>() };
         data.Origin = Dir(z, x, y, 0.5, 0.5) * Geo.Radius;
+        var q = GraphicsQuality.Current;
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color>(); var idx = new List<int>();
         var uvs = new List<Vector2>(); var uv2s = new List<Vector2>();
         var g = new Geom(verts, norms, cols, uvs, uv2s, idx);
@@ -205,6 +211,17 @@ public static class RoadBuilder
                     Ribbon(run, data.Origin, -width / 2, width / 2, lift, style.Color, style.Kind, g);
                     // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
                     Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
+                    // Accotements en gravier des routes goudronnées (bord extérieur fondu dans l'herbe)
+                    float shoulder = 0;
+                    if (!style.Rail && style.Kind is Surface.MarkedAsphalt or Surface.Asphalt && q.RoadShoulder > 0)
+                    {
+                        shoulder = q.RoadShoulder * (style.Priority >= 3 ? 1f : 0.6f);
+                        Ribbon(run, data.Origin, -width / 2 - shoulder, -width / 2, Lift, Shoulder, Surface.ShoulderLeft, g);
+                        Ribbon(run, data.Origin, width / 2, width / 2 + shoulder, Lift, Shoulder, Surface.ShoulderRight, g);
+                    }
+                    // Murets de pierre là où la route entaille la pente (amont) ou passe sur un remblai (aval)
+                    if (q.RoadWalls && !style.Rail && style.Priority >= 1)
+                        SideWalls(run, data.Origin, width / 2 + shoulder + 0.1, spacing, lift, g, ref incomplete);
                     if (style.Rail)
                     {
                         // deux rails en acier, un peu surélevés (sur les traverses)
@@ -518,6 +535,67 @@ public static class RoadBuilder
                 outList.Add(sh);
             }
             i = j;
+        }
+    }
+
+    /// <summary>
+    /// Murets le long d'une route : côté amont quand le terrain dépasse la chaussée de 0,7 à 6 m (mur de soutènement
+    /// face à la route, de la chaussée jusqu'au-dessus du talus), côté aval quand la route est 1 à 3,2 m au-dessus du
+    /// terrain (remblai : mur tourné vers l'extérieur, du sol jusqu'au bord de la chaussée). Au-delà, c'est un pont
+    /// ou une falaise : rien.
+    /// </summary>
+    static void SideWalls(List<(Vec3d dir, double h)> run, Vec3d origin, double off, double spacing, float lift, Geom g, ref bool incomplete)
+    {
+        int n = run.Count;
+        if (n < 2) return;
+        var gh = new double[n];
+        var sides = new Vec3d[n];
+        var stone = Stone; stone.A = (float)Surface.StoneWall / 10f;
+        double h0 = run[0].h;
+        foreach (int s in new[] { -1, 1 })
+        {
+            for (int i = 0; i < n; i++)
+            {
+                var up = run[i].dir;
+                var tangent = (run[Math.Min(i + 1, n - 1)].dir - run[Math.Max(i - 1, 0)].dir).Normalized();
+                sides[i] = tangent.Cross(up).Normalized(); // vers la droite
+                var p = (up * Geo.Radius + sides[i] * (off * s)).Normalized();
+                Geo.ToLatLon(p, out double la, out double lo);
+                float hv = HeightProvider.Sample(la, lo, spacing, out bool water, out bool pending);
+                if (pending) incomplete = true;
+                gh[i] = water ? double.NaN : hv;
+            }
+            double along = 0;
+            for (int i = 0; i + 1 < n; i++)
+            {
+                double seg = (run[i + 1].dir - run[i].dir).Length() * Geo.Radius;
+                double c0 = gh[i] - run[i].h, c1 = gh[i + 1] - run[i + 1].h;
+                bool cut = c0 > 0.7 && c1 > 0.7 && c0 < 6 && c1 < 6;
+                bool fill = c0 < -1.0 && c1 < -1.0 && c0 > -3.2 && c1 > -3.2;
+                if (cut || fill)
+                {
+                    double b0 = cut ? run[i].h + lift - 0.3 : gh[i] - 0.3, b1 = cut ? run[i + 1].h + lift - 0.3 : gh[i + 1] - 0.3;
+                    double t0 = cut ? Math.Min(gh[i], run[i].h + 3.5) + 0.15 : run[i].h + lift + 0.08;
+                    double t1 = cut ? Math.Min(gh[i + 1], run[i + 1].h + 3.5) + 0.15 : run[i + 1].h + lift + 0.08;
+                    Vec3d P(int k, double h) => run[k].dir * (Geo.Radius + h) + sides[k] * (off * s);
+                    // face visible : vers la route (talus) ou vers l'extérieur (remblai) ; sens des triangles de Godot
+                    // (horaire vu de face) : B0, B1, T0 regarde vers la gauche de la route
+                    var facing = sides[i] * (cut ? -s : s);
+                    bool leftFacing = cut ? s > 0 : s < 0;
+                    var nrm = facing.ToVector3().Normalized();
+                    int k0 = g.Verts.Count;
+                    void V(Vec3d w, double hh, double a)
+                    {
+                        g.Verts.Add((w - origin).ToVector3()); g.Norms.Add(nrm); g.Cols.Add(stone);
+                        g.Uvs.Add(new Vector2((float)(hh - h0), (float)a)); g.Uv2s.Add(new Vector2(1, 0));
+                    }
+                    V(P(i, b0), b0, along); V(P(i + 1, b1), b1, along + seg); V(P(i, t0), t0, along); V(P(i + 1, t1), t1, along + seg);
+                    // k0 = B0, k0+1 = B1, k0+2 = T0, k0+3 = T1
+                    if (leftFacing) { g.Idx.Add(k0); g.Idx.Add(k0 + 1); g.Idx.Add(k0 + 2); g.Idx.Add(k0 + 2); g.Idx.Add(k0 + 1); g.Idx.Add(k0 + 3); }
+                    else { g.Idx.Add(k0 + 2); g.Idx.Add(k0 + 3); g.Idx.Add(k0); g.Idx.Add(k0); g.Idx.Add(k0 + 3); g.Idx.Add(k0 + 1); }
+                }
+                along += seg;
+            }
         }
     }
 

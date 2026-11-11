@@ -22,15 +22,18 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Arbres : distance (`VegetationMaxSpacing`) | ~700 m | ~1,5 km | ~1,5 km | ~3 km |
 | Arbres : densité (`VegetationDensity`) | 40 % | 70 % | 100 % | 100 % |
 | Herbe et cailloux (`GrassDensity` / `GrassDistance`) | non | 35 % / 40 m | 70 % / 80 m | 100 % / 150 m |
+| Brins par touffe d'herbe (`GrassBlades`) | — | 9 | 13 | 18 |
 | Textures du sol (`GroundDetail`, 0–3) | 1 | 2 | 3 | 3 |
 | Bâtiments affichés jusqu'à | 10 km | 20 km | 40 km | 60 km |
 | Intérieurs des bâtiments (`InteriorRadius` / `InteriorMax`) | 25 m / 6 | 45 m / 12 | 80 m / 24 | 140 m / 40 |
 | Mobilier (`FurnitureDetail`, 0–3) / étages meublés (`InteriorFloorSpan`) | 0 / le sien | 1 / ± 1 | 2 / ± 1 | 3 / ± 2 |
 | Enseignes des commerces (`SignDistance`) | 40 m | 80 m | 140 m | 220 m |
 | Routes, noms (rayon ×) | 0,6 / 0,7 | 0,8 / 0,85 | 1 / 1 | 1,3 / 1,2 |
-| Ombres du soleil | non | 300 m, bâtiments | 1 km, + relief et arbres | 3 km, douces, + petits objets |
+| Accotements en gravier (`RoadShoulder`) / murets en pente (`RoadWalls`) | non / non | 0,5 m / oui | 0,7 m / oui | 0,8 m / oui |
+| Ombres du soleil | non | 300 m, bâtiments | 1 km, + relief et arbres, pénombre du soleil | 3 km, + petits objets, pénombre très douce |
 | Anticrénelage | FXAA | MSAA 2× | MSAA 4× | MSAA 8× |
 | Occlusion ambiante (SSAO) / halo | non / non | non / oui | oui / oui | oui / oui |
+| Lumière indirecte (SSIL) / brume de vallée / brouillard volumétrique | non | non | non / oui / non | oui / oui / oui |
 | Résolution 3D par défaut | 80 % | 100 % | 100 % | 100 % |
 | Nuages (subdivisions) / pluie et neige | 16 / 30 % | 32 / 60 % | 48 / 100 % | 96 / 150 % |
 | Distance générale (`DrawDistanceScale`) | 0,5 | 0,75 | 1 | 1,4 |

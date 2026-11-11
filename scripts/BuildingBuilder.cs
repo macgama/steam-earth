@@ -75,7 +75,8 @@ public static class BuildingBuilder
     const double R = Geo.Radius;
     const double Foundation = 6;     // m : les murs descendent sous le sol (le relief lointain est plus grossier)
     const double FloorHeight = 3;
-    public const double FloorAboveGround = 0.15; // le rez-de-chaussée est un peu au-dessus du point le plus haut du terrain
+    public const double FloorAboveGround = 0.3; // le rez-de-chaussée est un peu au-dessus du point le plus haut du terrain
+                                                // (marge : le relief des bâtiments est lu à 4 m, celui du sol affiché à 0,5 m)
 
     /// <summary>Contour d'une tuile vectorielle (coordonnées de la tuile), avant la construction.</summary>
     sealed class Cand
@@ -325,13 +326,27 @@ public static class BuildingBuilder
         foreach (var h in hs) footprint += Poly2.SignedArea(h);
         if (footprint < 4) return;
 
-        // Sol sous le bâtiment
+        // Sol sous le bâtiment : aux coins, mais aussi le long des murs (tous les ~3 m) et au centre, sinon une bosse
+        // ou un talus entre deux coins passe au-dessus du rez-de-chaussée (fenêtres à moitié enterrées)
         double gmin = double.MaxValue, gmax = double.MinValue;
-        foreach (var (la, lo) in lats)
+        void Probe(double la, double lo)
         {
             float g = Ground(la, lo, ctx);
             gmin = Math.Min(gmin, g); gmax = Math.Max(gmax, g);
         }
+        for (int i = 0; i < lats.Count; i++)
+        {
+            var (la0, lo0) = lats[i]; var (la1, lo1) = lats[(i + 1) % lats.Count];
+            Probe(la0, lo0);
+            double dy = (la1 - la0) * 111_320, dx = (lo1 - lo0) * 111_320 * Math.Cos(la0 * Math.PI / 180);
+            int steps = Math.Min((int)(Math.Sqrt(dx * dx + dy * dy) / 3), 20);
+            for (int k = 1; k <= steps; k++)
+            {
+                double t = k / (double)(steps + 1);
+                Probe(la0 + (la1 - la0) * t, lo0 + (lo1 - lo0) * t);
+            }
+        }
+        Probe(clat, clon);
         if (BuildOne(cd, ext, hs, footprint, gmin, gmax, fr, clat, clon, ctx)) ctx.Data.PerArea[area]++;
     }
 
@@ -422,11 +437,17 @@ public static class BuildingBuilder
         if (pitched && (double.IsNaN(roofH) || roofH <= 0)) roofH = Math.Min(boxShort * 0.5 * (0.7 + 0.35 * seed) * (churchLike ? 1.3 : 1), churchLike ? 14 : 7);
         if (pitched) roofH = Math.Min(roofH, Math.Max(height - minH - 2, 0.5));
 
-        double top = gmin + height;
-        if (!isPart || minH <= 0) top = Math.Max(top, gmax + Math.Min(height, 2.5)); // sur une pente : jamais enterré côté amont
-        double baseH = minH > 0 ? gmin + minH : gmin - Foundation;
-        double eave = top - roofH;
+        // Sur une pente, le rez-de-chaussée est au niveau du sol côté amont (porte d'entrée) et un socle de pierre
+        // rattrape la pente côté aval, comme les maisons de montagne. La hauteur donnée vaut côté aval, mais l'amont
+        // garde au moins un étage entier (ou 70 % des murs) : la maison ne s'enfonce plus dans le talus.
         double floor0 = minH > 0 ? gmin + minH : gmax + FloorAboveGround;
+        double wallsH = height - minH - roofH;
+        double eave = gmin + minH + wallsH;
+        if (minH <= 0) eave = Math.Max(eave, floor0 + Math.Min(wallsH, Math.Max(FloorHeight, wallsH * 0.7)));
+        double top = eave + roofH;
+        double baseH = minH > 0 ? gmin + minH : gmin - Foundation;
+        // Socle visible côté aval (au moins une bordure de 30 cm au pied des murs)
+        bool plinth = minH <= 0 && floor0 - gmin > 0.05;
 
         // Étages : donnés par OSM, sinon d'après la hauteur ; les nefs et les halles sont d'un seul tenant
         double usable = eave - floor0;
@@ -470,7 +491,13 @@ public static class BuildingBuilder
         ctx.Obs.Add(solid);
 
         bool stadiumBowl = kind is BuildingKind.Stadium && holes.Count > 0 && footprint > 2000;
-        Walls(ext, baseH, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
+        if (plinth)
+        {
+            // le socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
+            Walls(ext, baseH, floor0, map, PlinthColor(wall, seed), Vector2.Zero, fr, m, -1, 0, 0, 0, 0);
+            Walls(ext, floor0, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
+        }
+        else Walls(ext, baseH, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
         if (stadiumBowl)
         {
             double inner = Math.Min(floor0 + 2.5, eave);
@@ -589,6 +616,13 @@ public static class BuildingBuilder
                 or BuildingKind.Library or BuildingKind.Museum => 12 + 6 * seed,
             _ => area > 800 ? 9 + 6 * seed : 6 + 4 * seed,
         };
+    }
+
+    /// <summary>Socle sous le rez-de-chaussée : pierre grise (ou béton) un peu plus sombre que la façade.</summary>
+    static Color PlinthColor(Color wall, double seed)
+    {
+        var stone = seed < 0.5 ? new Color(0.50f, 0.49f, 0.46f) : new Color(0.58f, 0.57f, 0.55f);
+        return MeshAcc.Shade(stone.Lerp(wall, 0.25f), 0.85f);
     }
 
     static Color WallColor(Mvt.Feature f, BuildingKind kind, double seed)
