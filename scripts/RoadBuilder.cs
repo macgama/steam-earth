@@ -173,6 +173,7 @@ public static class RoadBuilder
         var tunnels = new List<Range>(); var bridges = new List<Range>();
         bool incomplete = false;
         var junctions = Junctions.Of(segments, z, x, y);
+        var corridors = Corridors.Of(segments, z, x, y);
 
         foreach (var f in segments)
         {
@@ -227,7 +228,7 @@ public static class RoadBuilder
                         // pas d'arbre sur la chaussée ni juste au bord (un sentier garde les arbres tout proches)
                         Clear(run, width / 2 + (width >= 2.5f ? 1.5f : 0.4f), data.Clearings);
                         if (onBridge)
-                            BridgeStructure(run, data.Origin, width / 2, lift, g);
+                            BridgeStructure(run, data.Origin, width / 2, lift, g, corridors);
                         else
                         {
                             // En ville (carrefours rapprochés) : ni accotements en gravier ni murets, la rue est bordée de trottoirs
@@ -336,6 +337,56 @@ public static class RoadBuilder
         }
     }
 
+    /// <summary>Emprise au sol des routes et voies ferrées d'une tuile (hors ponts), pour placer les piles des ponts.</summary>
+    sealed class Corridors
+    {
+        const double Cell = 10;
+        readonly Dictionary<(long, long, long), List<(Vec3d p, double half)>> _cells = new();
+
+        public static Corridors Of(List<Mvt.Feature> segments, int z, int x, int y)
+        {
+            var c = new Corridors();
+            var tunnels = new List<Range>(); var bridges = new List<Range>();
+            foreach (var f in segments)
+            {
+                var st = StyleFor(f.Str("subtype"), f.Str("class"));
+                if (st == null || !st.Value.Rail && st.Value.Priority < 1) continue;
+                tunnels.Clear(); bridges.Clear();
+                ParseRules(f, out bool under, tunnels, bridges, out double w);
+                if (under || bridges.Count > 0) continue;
+                double half = (double.IsNaN(w) ? st.Value.Width : Math.Clamp(w, 1, 30)) / 2;
+                foreach (var part in f.Parts)
+                    for (int i = 0; i + 3 < part.Length; i += 2)
+                    {
+                        var a = Dir(z, x, y, part[i], part[i + 1]) * Geo.Radius;
+                        var b = Dir(z, x, y, part[i + 2], part[i + 3]) * Geo.Radius;
+                        int steps = Math.Max(1, (int)Math.Ceiling((b - a).Length() / 2));
+                        for (int s = 0; s <= steps; s++) c.Add(a + (b - a) * ((double)s / steps), half);
+                    }
+            }
+            return c;
+        }
+
+        static (long, long, long) Key(Vec3d p) => ((long)Math.Floor(p.X / Cell), (long)Math.Floor(p.Y / Cell), (long)Math.Floor(p.Z / Cell));
+
+        void Add(Vec3d p, double half)
+        {
+            var k = Key(p);
+            if (!_cells.TryGetValue(k, out var l)) _cells[k] = l = new List<(Vec3d, double)>();
+            l.Add((p, half));
+        }
+
+        /// <summary>Vrai si aucune voie ne passe à moins de <paramref name="margin"/> m (plus sa demi-largeur) de p.</summary>
+        public bool Free(Vec3d p, double margin)
+        {
+            var (kx, ky, kz) = Key(p);
+            for (long a = -2; a <= 2; a++) for (long b = -2; b <= 2; b++) for (long d = -2; d <= 2; d++)
+                if (_cells.TryGetValue((kx + a, ky + b, kz + d), out var l))
+                    foreach (var (q, half) in l) if ((q - p).Length() < half + margin) return false;
+            return true;
+        }
+    }
+
     /// <summary>Point d'une voie posée : direction, hauteur de la chaussée, hauteur du sol, sur un tablier de pont.</summary>
     readonly record struct Pt(Vec3d dir, double h, double ground, bool bridge);
 
@@ -348,7 +399,7 @@ public static class RoadBuilder
     /// <param name="total">longueur du tronçon complet (m) ; 0 = ce morceau seul</param>
     /// <param name="decks">hauteur des culées de chaque pont (même ordre que <paramref name="bridges"/>)</param>
     static List<List<Pt>> BuildLine(double[] part, int z, int x, int y, double offset, double total,
-        List<Range> tunnels, List<Range> bridges, (double a, double b)[] decks, double spacing, double step, ref bool incomplete)
+        List<Range> tunnels, List<Range> bridges, (double ha, double hb, double ta, double tb)[] decks, double spacing, double step, ref bool incomplete)
     {
         int n = part.Length / 2;
         var dirs = new Vec3d[n];
@@ -379,6 +430,7 @@ public static class RoadBuilder
         var heights = new double[pts.Count];
         for (int i = 0; i < pts.Count; i++) heights[i] = Ground(pts[i].dir, spacing, ref incomplete);
         var ground = (double[])heights.Clone();
+        var onDeck = new bool[pts.Count]; // sous un tablier de pont (une seule portion continue par pont)
 
         // Ponts : tablier droit entre les deux culées (au-dessus de l'eau ou de la vallée). Les hauteurs des culées
         // sont calculées une fois pour le tronçon entier : les morceaux voisins se raccordent.
@@ -386,7 +438,7 @@ public static class RoadBuilder
         {
             var br = bridges[k];
             double ha, hb, ta = br.A, tb = br.B;
-            if (decks != null) { (ha, hb) = decks[k]; if (double.IsNaN(ha)) continue; } // pont sans creux : posé au sol
+            if (decks != null) { (ha, hb, ta, tb) = decks[k]; if (double.IsNaN(ha)) continue; } // pont sans creux : posé au sol
             else
             {
                 // tronçon non recomposé (pont sur toute sa longueur) : culées = extrémités de ce morceau
@@ -403,6 +455,7 @@ public static class RoadBuilder
                 if (t < ta || t > tb) continue;
                 double a = (t - ta) / Math.Max(tb - ta, 1e-9);
                 heights[i] = Math.Max(ha * (1 - a) + hb * a, heights[i] + 0.3);
+                onDeck[i] = true;
             }
         }
 
@@ -412,7 +465,7 @@ public static class RoadBuilder
         {
             if (tunnels.Count > 0 && In(tunnels, pts[i].t)) { cur = null; continue; }
             if (cur == null) { cur = new List<Pt>(); runs.Add(cur); }
-            cur.Add(new Pt(pts[i].dir, heights[i], ground[i], heights[i] - ground[i] > 1.0));
+            cur.Add(new Pt(pts[i].dir, heights[i], ground[i], onDeck[i]));
         }
         runs.RemoveAll(r => r.Count < 2);
         return runs;
@@ -572,41 +625,46 @@ public static class RoadBuilder
 
     /// <summary>Hauteur des deux culées de chaque pont. Les limites OSM tombent souvent un peu avant le haut du talus :
     /// on remonte jusqu'à 30 m vers l'extérieur tant que le terrain monte.</summary>
-    static (double, double)[] DeckHeights(List<Piece> chain, List<Range> bridges, double spacing, ref bool incomplete)
+    static (double, double, double, double)[] DeckHeights(List<Piece> chain, List<Range> bridges, double spacing, ref bool incomplete)
     {
         double total = chain[^1].Offset + chain[^1].Len;
-        var res = new (double, double)[bridges.Count];
+        var res = new (double, double, double, double)[bridges.Count];
         for (int k = 0; k < bridges.Count; k++)
         {
             double ma = bridges[k].A * total, mb = bridges[k].B * total;
-            double ha = Abutment(ma, -1, ref incomplete), hb = Abutment(mb, +1, ref incomplete);
+            // Les culées vont jusqu'en haut du talus : la portion entre la limite OSM et le haut du talus fait partie
+            // du tablier (sinon la route plonge dans le creux avant de remonter sur le pont).
+            var (ha, ma2) = Abutment(ma, -1, ref incomplete);
+            var (hb, mb2) = Abutment(mb, +1, ref incomplete);
             // Le relief (30 m, lissé) ne montre souvent pas le creux franchi : passage supérieur au-dessus d'une autre rue,
             // petit ruisseau… Le tablier ne serait alors qu'une feuille flottant à 30 cm du sol, qui traverse les voitures
             // et le personnage. Sans vrai creux (moins de 2 m), la voie reste posée au sol. Mesuré sur tout le pont :
             // tous les morceaux du tronçon décident pareil (pas de marche en bord de tuile).
             double clearance = 0;
-            int n = Math.Max(2, (int)Math.Ceiling((mb - ma) / Math.Max(spacing, 5)));
+            int n = Math.Max(2, (int)Math.Ceiling((mb2 - ma2) / Math.Max(spacing, 5)));
             for (int i = 1; i < n; i++)
             {
                 double a = (double)i / n;
-                clearance = Math.Max(clearance, ha * (1 - a) + hb * a - Ground(PointAt(chain, ma + (mb - ma) * a), spacing, ref incomplete));
+                clearance = Math.Max(clearance, ha * (1 - a) + hb * a - Ground(PointAt(chain, ma2 + (mb2 - ma2) * a), spacing, ref incomplete));
             }
-            res[k] = clearance < MinBridgeClearance ? (double.NaN, double.NaN) : (ha, hb);
+            res[k] = clearance < MinBridgeClearance ? (double.NaN, double.NaN, 0, 0) : (ha, hb, ma2 / total, mb2 / total);
         }
         return res;
 
-        double Abutment(double m, int dir, ref bool inc)
+        // Haut du talus : point le plus haut à moins de 40 m vers l'extérieur, en suivant le terrain tant qu'il ne
+        // redescend pas nettement (un petit creux du relief lissé n'arrête pas la recherche).
+        (double h, double m) Abutment(double m, int dir, ref bool inc)
         {
-            double best = Ground(PointAt(chain, m), spacing, ref inc);
-            for (double d = 2; d <= 30; d += 2)
+            double best = Ground(PointAt(chain, m), spacing, ref inc), bestM = m;
+            for (double d = 2; d <= 40; d += 2)
             {
                 double mm = m + dir * d;
                 if (mm < 0 || mm > total) break;
                 double h = Ground(PointAt(chain, mm), spacing, ref inc);
-                if (h <= best + 0.02) break;
-                best = h;
+                if (h > best + 0.05) { best = h; bestM = mm; }
+                else if (h < best - 0.5) break;
             }
-            return best;
+            return (best, bestM);
         }
     }
 
@@ -716,7 +774,7 @@ public static class RoadBuilder
             cols.Add(col); cols.Add(col);
             if (i > 0) along += (run[i].dir - run[i - 1].dir).Length() * Geo.Radius;
             uvs.Add(new Vector2(0, (float)along)); uvs.Add(new Vector2(1, (float)along));
-            var uv2 = new Vector2(right - left, mark == null ? 1 : mark[i]);
+            var uv2 = new Vector2(Math.Abs(right - left), mark == null ? 1 : mark[i]);
             uv2s.Add(uv2); uv2s.Add(uv2);
         }
         for (int i = 0; i < n - 1; i++)
@@ -763,7 +821,7 @@ public static class RoadBuilder
     /// Structure d'un pont sous le tablier (une portion de voie marquée « bridge ») : bords en béton du dessous du
     /// tablier jusqu'en haut du parapet, sous-face, et piles jusqu'au sol tous les ~25 m là où le vide dépasse 3 m.
     /// </summary>
-    static void BridgeStructure(List<Pt> run, Vec3d origin, float half, float lift, Geom g)
+    static void BridgeStructure(List<Pt> run, Vec3d origin, float half, float lift, Geom g, Corridors below)
     {
         int n = run.Count;
         if (n < 2) return;
@@ -771,7 +829,9 @@ public static class RoadBuilder
         const double Thick = 0.9;            // épaisseur du tablier (m)
         double top = lift + 1.0; // parapet
         // sous-face
-        Ribbon(run, origin, -half, half, lift - (float)Thick, Concrete, Surface.Concrete, g);
+        // sous-face : face avant vers le bas (bords inversés = triangles dans l'autre sens), visible depuis la rue
+        // (normale vers le haut : éclairée comme le dessus, assombrie, sinon presque noire sous la seule lumière ambiante)
+        Ribbon(run, origin, half, -half, lift - (float)Thick, Shade(Concrete, 0.7f), Surface.Concrete, g);
         var sides = new Vec3d[n]; var miters = new double[n];
         for (int i = 0; i < n; i++) (sides[i], miters[i]) = Side(run, i);
         double along = 0;
@@ -788,23 +848,33 @@ public static class RoadBuilder
             }
             along += seg;
         }
-        // Piles : murs-piles de béton, perpendiculaires à la voie
-        double total = along, next = Math.Min(12, total / 2);
-        along = 0;
-        for (int i = 0; i + 1 < n; i++)
-        {
-            double seg = (run[i + 1].dir - run[i].dir).Length() * Geo.Radius;
-            while (next <= along + seg && next < total - 6)
+        // Piles : murs-piles de béton, perpendiculaires à la voie, tous les ~25 m. Une pile ne se pose jamais sur
+        // une route ou une voie ferrée en dessous : on la décale de quelques mètres, ou on s'en passe.
+        var cum = new double[n];
+        for (int i = 1; i < n; i++) cum[i] = cum[i - 1] + (run[i].dir - run[i - 1].dir).Length() * Geo.Radius;
+        double total = cum[n - 1];
+        double pw = Math.Max(half * 0.7, 0.8);
+        for (double target = Math.Min(12, total / 2); target < total - 6; target += 25)
+            for (int tryK = 0; tryK <= 10; tryK++)
             {
-                double a = (next - along) / Math.Max(seg, 1e-9);
+                double m = target + (tryK % 2 == 0 ? 1 : -1) * 2 * ((tryK + 1) / 2);
+                if (m < 4 || m > total - 4) continue;
+                int i = 0;
+                while (i < n - 2 && cum[i + 1] < m) i++;
+                double a = (m - cum[i]) / Math.Max(cum[i + 1] - cum[i], 1e-9);
                 var dir = (run[i].dir * (1 - a) + run[i + 1].dir * a).Normalized();
                 double h = run[i].h * (1 - a) + run[i + 1].h * a;
                 double gnd = run[i].ground * (1 - a) + run[i + 1].ground * a;
-                if (h - gnd > 3) Pier(dir, (run[i + 1].dir - run[i].dir).Normalized(), h + lift - Thick, gnd - 0.5);
-                next += 25;
+                if (h - gnd <= 3) continue;
+                var tangent = (run[i + 1].dir - run[i].dir).Normalized();
+                var side = tangent.Cross(dir).Normalized();
+                bool free = true;
+                for (double e = -pw; e <= pw + 1e-9 && free; e += Math.Max(pw / 3, 0.5))
+                    free = below == null || below.Free(dir * Geo.Radius + side * e, 1.2);
+                if (!free) continue;
+                Pier(dir, tangent, h + lift - Thick, gnd - 0.5);
+                break;
             }
-            along += seg;
-        }
 
         void Pier(Vec3d up, Vec3d tangent, double hTop, double hBot)
         {
