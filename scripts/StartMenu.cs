@@ -64,6 +64,11 @@ public partial class StartMenu : CanvasLayer
         _hint.AddThemeColorOverride("font_color", new Color(1, 0.88f, 0.55f));
         box.AddChild(_hint);
 
+        // Au sol seulement en Suisse : ailleurs, on arrive en vol
+        var rule = new Label { Text = "En Suisse : à pied, à vélo, en voiture, en bateau. Ailleurs (✈) : survol seulement.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        rule.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.65f));
+        box.AddChild(rule);
+
         _up = new Button { Text = "Reculer (vue plus large)", FocusMode = Control.FocusModeEnum.None };
         _up.Pressed += ZoomOut;
         box.AddChild(_up);
@@ -122,7 +127,7 @@ public partial class StartMenu : CanvasLayer
         {
             if (!Normalize(k.Name).Contains(q)) continue;
             var country = k;
-            var b = new Button { Text = string.Format(Loc.T("{0} — capitale {1}"), k.Name, k.Capital), Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None };
+            var b = new Button { Text = (SwissZone.Contains(k.Lat, k.Lon) ? "" : "✈ ") + string.Format(Loc.T("{0} — capitale {1}"), k.Name, k.Capital), Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None };
             b.Pressed += () => GoToCity(country.Capital, country.Lat, country.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
             _list.AddChild(b);
         }
@@ -146,7 +151,7 @@ public partial class StartMenu : CanvasLayer
         string other = c.Other.Length > 0 ? $" « {c.Other} »" : "";
         var b = new Button
         {
-            Text = $"{c.Name}{other} — {where} · {kind}{(pop.Length > 0 ? ", " + pop : "")}",
+            Text = $"{(SwissZone.Contains(c.Lat, c.Lon) ? "" : "✈ ")}{c.Name}{other} — {where} · {kind}{(pop.Length > 0 ? ", " + pop : "")}",
             Alignment = HorizontalAlignment.Left, Flat = true, FocusMode = Control.FocusModeEnum.None,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, TooltipText = $"{c.Name}{other}\n{where}\n{c.Lat:0.0000}, {c.Lon:0.0000}",
         };

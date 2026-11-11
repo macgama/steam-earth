@@ -55,6 +55,9 @@ public abstract partial class Vehicle : Node3D
     public static Func<Vec3d, double, Vec3d> Wind = (p, h) => new Vec3d(0, 0, 0);
 
     public abstract void Step(VehicleInput input, double dt);
+
+    /// <summary>Arrêt net (frontière suisse : on ne va pas plus loin au sol ni sur l'eau).</summary>
+    public virtual void StopAtBorder() { }
     /// <summary>Ligne d'informations pour le HUD.</summary>
     public abstract string Hud();
 
