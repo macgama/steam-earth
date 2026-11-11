@@ -126,12 +126,20 @@ public partial class BuildingsLayer : Node3D
     {
         var shadow = GraphicsQuality.ShadowFor(ShadowCaster.Buildings);
         foreach (var t in _tiles.Values) if (t.Mesh != null) t.Mesh.CastShadow = shadow;
+        if (q.BuildingDetail == old.BuildingDetail) return;
+        // façades : variante du shader de ce niveau ; balcons ajoutés ou retirés (à partir de Moyen) : on reconstruit
+        _mat.Shader = BuildingShader.Get(q.BuildingDetail);
+        if ((q.BuildingDetail >= 1) != (old.BuildingDetail >= 1))
+        {
+            foreach (var t in _tiles.Values) t.Stamp++;
+            _nextScan = 0;
+        }
     }
 
     public override void _Ready()
     {
         GraphicsQuality.Changed += OnQualityChanged;
-        _mat = new ShaderMaterial { Shader = new Shader { Code = Shader } };
+        _mat = new ShaderMaterial { Shader = BuildingShader.Get(GraphicsQuality.Current.BuildingDetail) };
         _archive = Overture.OpenAsync("buildings");
         _placesArchive = Overture.OpenAsync("places"); // commerces, écoles, églises… (fonction des bâtiments)
         _baseArchive = Overture.OpenAsync("base");     // zones OSM : écoles, hôpitaux, stades (zoom 13)
@@ -500,111 +508,4 @@ public partial class BuildingsLayer : Node3D
         else if (shift) Demolish(city);
         GetViewport().SetInputAsHandled(); // le clic ne capture pas la souris
     }
-
-    // Murs éclairés par le soleil ; fenêtres dessinées selon (abscisse le long du mur, étage), allumées la nuit.
-    // UV2.x = motif (WindowStyle) : fenêtres d'habitation, bandeaux de bureaux, vitraux d'église, vitrines,
-    // baies d'école, mur-rideau, porte (effacée près du joueur), gradins, pelouse, auvent rayé.
-    // Vues de l'intérieur (face arrière), les vitres laissent voir le jour.
-    const string Shader = @"
-shader_type spatial;
-render_mode cull_disabled;
-uniform float night = 0.0;
-uniform float lit_fraction = 0.5;
-uniform float shop_lit = 1.0;
-uniform vec3 player_world = vec3(0.0, -1e9, 0.0);
-uniform float door_open = 7.0;
-varying vec3 wpos;
-void vertex() {
-    wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-// hachage sans sinus (précis même avec de grandes coordonnées : pas de grain dans les fenêtres)
-float hash(vec3 p) {
-    p = fract(mod(p, 4096.0) * 0.1031);
-    p += dot(p, p.zyx + 31.32);
-    return fract((p.x + p.y) * p.z);
-}
-float box(vec2 f, float x0, float x1, float y0, float y1) {
-    return step(x0, f.x) * step(f.x, x1) * step(y0, f.y) * step(f.y, y1);
-}
-void fragment() {
-    vec3 base = pow(COLOR.rgb, vec3(2.2));
-    ROUGHNESS = 0.9;
-    SPECULAR = 0.25;
-    int style = int(UV2.x + 0.5);
-    float seed = UV2.y;
-    if (style == 0) { ALBEDO = base; }
-    else if (style == 8) {
-        // porte d'entrée : effacée quand le joueur s'approche (il voit l'intérieur, la porte ouverte)
-        if (distance(wpos, player_world) < door_open) discard;
-        float panel = step(0.5, fract(UV.y / 0.5)) * 0.12;
-        float glass = step(1.45, UV.y) * step(UV.y, 1.95) * step(0.12, fract(UV.x / 0.55));
-        ALBEDO = mix(base * (0.9 + panel), vec3(0.06, 0.07, 0.09), glass);
-        ROUGHNESS = mix(0.6, 0.2, glass);
-    } else if (style == 10) {
-        // gradins : rangées de sièges séparées par des marches de béton
-        float row = fract(UV.y / 0.45);
-        ALBEDO = mix(base, vec3(0.45), step(0.72, row));
-    } else if (style == 11) {
-        // pelouse tondue en bandes
-        float band = step(0.5, fract(UV.x / 5.5));
-        ALBEDO = base * mix(0.85, 1.08, band);
-        ROUGHNESS = 1.0;
-    } else if (style == 13) {
-        // toile d'auvent rayée
-        ALBEDO = mix(base, vec3(0.85, 0.83, 0.78), step(0.5, fract(UV.x / 0.45)));
-        ROUGHNESS = 1.0;
-    } else {
-        float cw = style == 3 ? 4.0 : 3.2;
-        vec2 cell = vec2(UV.x / cw, UV.y / 3.0);
-        vec2 f = fract(cell);
-        float lvl = floor(cell.y);
-        float above = step(0.0, UV.y);
-        float win = 0.0;
-        bool shop = false;
-        if ((style == 4 || style == 9) && lvl < 0.5) {
-            // vitrine au rez-de-chaussée
-            win = box(f, 0.06, 0.94, 0.05, 0.80) * (1.0 - box(vec2(fract(UV.x / 1.6), f.y), 0.0, 0.025, 0.0, 1.0));
-            shop = true;
-        } else if (style == 1 || style == 4) {
-            win = box(f, 0.30, 0.72, 0.32, 0.78);
-        } else if (style == 2 || style == 9) {
-            win = box(f, 0.0, 1.0, 0.30, 0.86) * step(0.05, fract(UV.x / 1.6));
-        } else if (style == 3) {
-            // vitraux : hautes fenêtres à arc
-            vec2 q = vec2((f.x - 0.5) / 0.13, (f.y - 0.62) / 0.12);
-            win = max(box(f, 0.37, 0.63, 0.16, 0.62), step(length(q), 1.0) * step(0.62, f.y));
-        } else if (style == 5) {
-            win = box(f, 0.0, 1.0, 0.72, 0.88) * step(0.06, fract(UV.x / 1.2));
-        } else if (style == 6) {
-            win = box(f, 0.06, 0.94, 0.28, 0.86) * (1.0 - box(f, 0.49, 0.51, 0.0, 1.0));
-        } else if (style == 7) {
-            win = (1.0 - step(fract(UV.x / 1.5), 0.04)) * (1.0 - step(f.y, 0.07));
-        } else if (style == 12) {
-            win = box(f, 0.18, 0.82, 0.14, 0.88) * step(0.05, fract(UV.x / 0.8));
-        }
-        win *= above;
-        // au loin, les fenêtres se fondent dans la façade (pas de scintillement)
-        float blur = clamp(max(fwidth(cell.x), fwidth(cell.y)) * 2.5 - 0.5, 0.0, 1.0);
-        float m = mix(win, style == 7 ? 0.8 : 0.2, blur);
-        vec3 glass = vec3(0.05, 0.065, 0.08);
-        if (style == 3) glass = mix(vec3(0.10, 0.12, 0.28), vec3(0.30, 0.10, 0.10), step(0.5, hash(vec3(floor(cell), 3.0))));
-        if (shop) glass = vec3(0.16, 0.14, 0.11); // vitrine : on devine l'intérieur éclairé
-        if (!FRONT_FACING) glass = mix(vec3(0.55, 0.68, 0.85), vec3(0.03, 0.04, 0.07), night); // vu de l'intérieur : le jour dehors
-        ALBEDO = mix(base, glass, m);
-        ROUGHNESS = mix(0.9, 0.25, m);
-        // chaque fenêtre a sa valeur fixe : quand la part allumée baisse (nuit), ce sont toujours les mêmes qui s'éteignent
-        float lit = step(1.0 - lit_fraction, hash(vec3(floor(cell), floor(seed * 997.0))));
-        vec3 warm = vec3(1.0, 0.70, 0.36);
-        if (shop) {
-            EMISSION = vec3(1.0, 0.86, 0.62) * mix(0.25, 1.2, night) * shop_lit * mix(win, 0.3, blur);
-        } else if (style == 3) {
-            EMISSION = vec3(0.9, 0.6, 0.35) * 0.35 * night * win * step(0.6, lit_fraction + 0.3);
-        } else {
-            EMISSION = warm * 0.9 * night * mix(win * lit, 0.2 * lit_fraction, blur);
-        }
-        if (!FRONT_FACING) EMISSION = vec3(0.55, 0.68, 0.85) * 0.6 * (1.0 - night) * win;
-    }
-    // vu de l'intérieur (face arrière) : le mur est éclairé par la pièce, pas par le soleil du dehors
-    if (!FRONT_FACING) EMISSION += ALBEDO * mix(0.55, 0.40, night);
-}";
 }

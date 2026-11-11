@@ -25,6 +25,7 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Brins par touffe d'herbe (`GrassBlades`) | — | 9 | 13 | 18 |
 | Textures du sol (`GroundDetail`, 0–3) | 1 | 2 | 3 | 3 |
 | Bâtiments affichés jusqu'à | 10 km | 20 km | 40 km | 60 km |
+| Façades et toits (`BuildingDetail`, 0–3, voir [MATERIAUX_BATIMENTS.md](MATERIAUX_BATIMENTS.md)) | motifs simples | + bruit, volets, balcons | + relief des joints, salissures | + relief fin, coulures, mousse |
 | Intérieurs des bâtiments (`InteriorRadius` / `InteriorMax`) | 25 m / 6 | 45 m / 12 | 80 m / 24 | 140 m / 40 |
 | Mobilier (`FurnitureDetail`, 0–3) / étages meublés (`InteriorFloorSpan`) | 0 / le sien | 1 / ± 1 | 2 / ± 1 | 3 / ± 2 |
 | Enseignes des commerces (`SignDistance`) | 40 m | 80 m | 140 m | 220 m |
