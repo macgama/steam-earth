@@ -25,7 +25,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: tools/swissbuildings3d
-      - run: python3 tools/swissbuildings3d/build_tiles.py list sheets.json
+      - run: |
+          /usr/bin/python3 -m pip install --user --break-system-packages numpy
+          /usr/bin/python3 tools/swissbuildings3d/build_tiles.py list sheets.json
       - uses: actions/upload-artifact@v4
         with:
           name: sheets
@@ -73,9 +75,9 @@ jobs:
           merge-multiple: true
           path: parts
       - run: |
-          python3 -m pip install --user --break-system-packages pmtiles
+          /usr/bin/python3 -m pip install --user --break-system-packages numpy pmtiles
           ls -la parts
-          python3 tools/swissbuildings3d/build_tiles.py merge parts/part_*.bin swissbuildings3d.pmtiles
+          /usr/bin/python3 tools/swissbuildings3d/build_tiles.py merge parts/part_*.bin swissbuildings3d.pmtiles
       - name: Publier dans la release swissbuildings3d
         env:
           GH_TOKEN: ${{ github.token }}
