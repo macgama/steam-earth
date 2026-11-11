@@ -168,6 +168,7 @@ public partial class GameUi : CanvasLayer
         {
             Overture.Attribution,
             BuildingsLayer.Attribution,
+            SwissBuildings3D.Attribution,
             "Relief : Copernicus DEM GLO-30 © DLR / Airbus, swissALTI3D © swisstopo",
             "Couverture des sols : ESA WorldCover 2021 (CC BY 4.0)",
             Bathymetry.Attribution,
