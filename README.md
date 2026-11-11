@@ -403,7 +403,7 @@ licence OGD, usage commercial autorisé avec « © swisstopo ») : vrais toits (
 chalets, églises et clochers tels qu'ils sont, au lieu de boîtes extrudées.
 
 - **Conversion** (`tools/swissbuildings3d/build_tiles.py`, workflow *Bâtiments suisses*) : les ~3 200 feuilles FileGDB
-  de swisstopo (~15 Go) deviennent une archive PMTiles (zoom 14, ~1,3 Go) publiée dans la release `swissbuildings3d`.
+  de swisstopo (~15 Go) deviennent une archive PMTiles (zoom 14, 2,67 millions de bâtiments, 1,3 Go, ~25 min) publiée dans la release `swissbuildings3d`.
   Chaque bâtiment y garde ses murs, son toit, son emprise au sol, son type (OBJEKTART), son nom et son usage.
 - **Dans le jeu** (`Data/SwissBuildings3D.cs`, `Buildings/BuildingBuilder.Swiss.cs`) : le maillage est posé sur le relief
   du jeu (pied des murs au point le plus bas du terrain, fondations sous le sol). Le contour OSM recouvert donne sa
@@ -413,6 +413,10 @@ chalets, églises et clochers tels qu'ils sont, au lieu de boîtes extrudées.
 - **Niveaux de qualité** : vrais bâtiments jusqu'à 1,5 km (Bas), 4 km (Moyen), 10 km (Élevé), 60 km (Ultra) du joueur ;
   plus loin, bâtiments génériques (moitié moins de triangles). Une tuile change de mode quand on s'en approche.
 - Avant la première publication de la release, ou hors ligne sans cache, tout reste en bâtiments génériques.
+
+| Berne : la cathédrale et la vieille ville | Lauterbrunnen : chalets et église | Devant une porte (on entre) |
+|---|---|---|
+| ![](docs/batiments-suisses-berne.jpg) | ![](docs/batiments-suisses-lauterbrunnen.jpg) | ![](docs/batiments-suisses-porte.jpg) |
 
 ### Fonction des bâtiments et intérieurs
 
