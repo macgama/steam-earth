@@ -166,23 +166,36 @@ public abstract partial class Vehicle : Node3D
         return pivot;
     }
 
-    /// <summary>Conducteur simplifié (mêmes couleurs que le personnage), assis : origine au niveau du siège.</summary>
-    protected Node3D Rider(Vector3 seat, out Node3D legL, out Node3D legR, float torsoTilt = 0)
+    Node3D _riderRoot;
+    CharacterModel _riderModel;
+    CharacterSeat _riderSeat;
+
+    /// <summary>Place du conducteur : le personnage du joueur (même apparence et tenue) y apparaît assis quand
+    /// le véhicule est occupé. <paramref name="seat"/> = dessus du siège, repère du véhicule.</summary>
+    protected Node3D Rider(Vector3 seat, CharacterSeat kind, Node3D parent = null)
     {
-        var shirt = Mat(new Color(0.85f, 0.32f, 0.18f), 0.85f);
-        var pants = Mat(new Color(0.16f, 0.22f, 0.38f), 0.85f);
-        var skin = Mat(new Color(0.93f, 0.76f, 0.62f), 0.85f);
-        var root = Pivot(seat);
-        var torso = Pivot(Vector3.Zero, root);
-        torso.Rotation = new Vector3(-torsoTilt, 0, 0);
-        Part(new CapsuleMesh { Radius = 0.19f, Height = 0.7f }, shirt, new Vector3(0, 0.33f, 0), torso);
-        Part(new SphereMesh { Radius = 0.13f, Height = 0.26f }, skin, new Vector3(0, 0.78f, 0), torso);
-        Part(new CapsuleMesh { Radius = 0.055f, Height = 0.62f }, shirt, new Vector3(-0.24f, 0.36f, -0.22f), torso, new Vector3(-1.0f, 0, 0));
-        Part(new CapsuleMesh { Radius = 0.055f, Height = 0.62f }, shirt, new Vector3(0.24f, 0.36f, -0.22f), torso, new Vector3(-1.0f, 0, 0));
-        legL = Pivot(new Vector3(-0.11f, 0, 0), root);
-        legR = Pivot(new Vector3(0.11f, 0, 0), root);
-        Part(new CapsuleMesh { Radius = 0.08f, Height = 0.85f }, pants, new Vector3(0, -0.36f, 0), legL);
-        Part(new CapsuleMesh { Radius = 0.08f, Height = 0.85f }, pants, new Vector3(0, -0.36f, 0), legR);
-        return root;
+        _riderRoot = Pivot(seat, parent);
+        _riderRoot.Visible = false;
+        _riderSeat = kind;
+        return _riderRoot;
+    }
+
+    /// <summary>Anime le conducteur (appelé à chaque image par <see cref="Animate"/>).</summary>
+    protected void UpdateRider(double pedal = 0, double lean = 0)
+    {
+        if (_riderRoot == null) return;
+        _riderRoot.Visible = Occupied;
+        if (!Occupied) return;
+        if (_riderModel == null)
+        {
+            // créé à la première montée seulement (les véhicules garés n'ont pas de conducteur)
+            _riderModel = new CharacterModel { Name = "Driver", IsPlayer = true };
+            _riderRoot.AddChild(_riderModel);
+        }
+        var m = new CharacterMotion { Seat = _riderSeat, Grounded = true, Pedal = pedal, Lean = lean };
+        _riderModel.Update(m, GetProcessDeltaTime());
+        // le bassin repose sur le siège
+        var pelvis = _riderModel.PelvisLocal;
+        _riderModel.Position = new Vector3(-pelvis.X, 0.1f - pelvis.Y, -pelvis.Z + 0.05f);
     }
 }

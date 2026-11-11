@@ -24,7 +24,7 @@ public partial class Plane : Vehicle
     public bool OnGround = true;
     double _alpha, _beta, _airspeed, _prop, _elev, _ail, _rud;
     Vec3d _wind;
-    Node3D _propeller, _elevator, _aileronL, _aileronR, _rudderNode, _nose, _rider, _legL, _legR;
+    Node3D _propeller, _elevator, _aileronL, _aileronR, _rudderNode, _nose, _rider;
 
     public override VehicleKind Kind => VehicleKind.Plane;
     public override string Label => "Avion";
@@ -259,13 +259,12 @@ public partial class Plane : Vehicle
         Wheel(new Vector3(0, 0.22f, -2.2f), 0.22f, 0.12f, tyre, metal, this, out _);
         Part(new BoxMesh { Size = new Vector3(0.06f, 0.9f, 0.06f) }, metal, new Vector3(0, 0.7f, -2.25f));
 
-        _rider = Rider(new Vector3(-0.3f, 1.35f, -0.3f), out _legL, out _legR);
-        _legL.Rotation = _legR.Rotation = new Vector3(1.3f, 0, 0);
+        _rider = Rider(new Vector3(-0.3f, 1.3f, -0.2f), CharacterSeat.Plane);
     }
 
     protected override void Animate()
     {
-        if (_rider != null) _rider.Visible = Occupied;
+        UpdateRider();
         if (_propeller == null) return;
         _propeller.Rotation = new Vector3(0, 0, (float)(_prop % (2 * Math.PI)));
         _elevator.Rotation = new Vector3((float)_elev * 0.35f, 0, 0);

@@ -4,8 +4,9 @@ using Godot;
 namespace SteamEarth;
 
 /// <summary>
-/// Personnage jouable (mode marche, touche F) : un mannequin simple fait de capsules,
-/// qui marche sur le relief avec une gravité dirigée vers le centre de la Terre.
+/// Personnage jouable (mode marche, touche F) : modèle 3D animé (<see cref="CharacterModel"/> : corps, coiffure et
+/// tenue choisis dans le menu Personnage) qui marche, court, saute, nage et grimpe sur le relief, avec une gravité
+/// dirigée vers le centre de la Terre.
 ///
 /// La position réelle est en double (<see cref="PosD"/>, position des pieds dans le repère planète).
 /// Comme tout le reste du monde, le nœud Godot est placé chaque image relativement à la caméra
@@ -26,47 +27,48 @@ public partial class Character : Node3D
     public bool Climbing { get; private set; }
     public const double JumpSpeed = 4.5;   // m/s → saut d'environ 1 m
     public const double Gravity = 9.81;
+    /// <summary>Dans l'eau profonde (lac, rivière, mer) : il nage, la tête hors de l'eau.</summary>
+    public bool Swimming { get; private set; }
+    // origine du modèle sous la surface : nage allongée (crawl/brasse, visage à fleur d'eau)
+    // ou sur place (debout, la tête dehors)
+    public const double SwimDepth = 1.08, TreadDepth = 1.45;
+    public bool Crouching;                 // accroupi (touche C)
+    /// <summary>Regard vers le haut / le bas (radians) : la tête suit la caméra.</summary>
+    public double LookPitch;
 
     double _verticalSpeed;
-    double _phase;  // cycle de marche
-    double _swing;  // amplitude actuelle du balancement (0 à l'arrêt)
-    Node3D _legL, _legR, _armL, _armR;
+    CharacterModel _model;
+
+    /// <summary>Modèle 3D (tenue, animations) ; les véhicules en créent d'autres pour le conducteur.</summary>
+    public CharacterModel Model => _model;
 
     public override void _Ready()
     {
-        var shirt = Mat(new Color(0.85f, 0.32f, 0.18f));
-        var pants = Mat(new Color(0.16f, 0.22f, 0.38f));
-        var skin = Mat(new Color(0.93f, 0.76f, 0.62f));
-        var dark = Mat(new Color(0.12f, 0.12f, 0.12f));
-        var bag = Mat(new Color(0.30f, 0.42f, 0.22f));
-
         // Godot : l'avant du personnage est −Z, le haut +Y, l'origine aux pieds.
-        _legL = Limb(new Vector3(-0.11f, 0.92f, 0), 0.085f, 0.92f, pants);
-        _legR = Limb(new Vector3(0.11f, 0.92f, 0), 0.085f, 0.92f, pants);
-        _armL = Limb(new Vector3(-0.29f, 1.47f, 0), 0.06f, 0.68f, shirt);
-        _armR = Limb(new Vector3(0.29f, 1.47f, 0), 0.06f, 0.68f, shirt);
-        Part(new CapsuleMesh { Radius = 0.2f, Height = 0.72f }, shirt, new Vector3(0, 1.22f, 0));   // torse
-        Part(new SphereMesh { Radius = 0.13f, Height = 0.26f }, skin, new Vector3(0, 1.67f, 0));    // tête
-        Part(new BoxMesh { Size = new Vector3(0.2f, 0.05f, 0.05f) }, dark, new Vector3(0, 1.69f, -0.115f)); // yeux : montre l'avant
-        Part(new BoxMesh { Size = new Vector3(0.3f, 0.38f, 0.16f) }, bag, new Vector3(0, 1.25f, 0.22f));    // sac à dos
+        _model = new CharacterModel { Name = "Model", IsPlayer = true };
+        AddChild(_model);
     }
 
-    static StandardMaterial3D Mat(Color c) => new() { AlbedoColor = c, Roughness = 0.85f };
-
-    MeshInstance3D Part(Mesh mesh, Material mat, Vector3 pos, Node3D parent = null)
+    /// <summary>Vue à la première personne : le corps reste visible (bras, jambes), la tête ne projette que son ombre.</summary>
+    public bool FirstPerson
     {
-        var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = mat, Position = pos };
-        (parent ?? this).AddChild(mi);
-        return mi;
+        get => _model?.FirstPerson ?? false;
+        set { if (_model != null) _model.FirstPerson = value; }
     }
 
-    /// <summary>Membre articulé : pivot à l'épaule ou à la hanche, la capsule pend en dessous.</summary>
-    Node3D Limb(Vector3 pivot, float radius, float length, Material mat)
+    /// <summary>Position des yeux (repère planète), d'après l'animation en cours.</summary>
+    public Vec3d EyePos
     {
-        var joint = new Node3D { Position = pivot };
-        AddChild(joint);
-        Part(new CapsuleMesh { Radius = radius, Height = length }, mat, new Vector3(0, -length / 2, 0), joint);
-        return joint;
+        get
+        {
+            var up = PosD.Normalized();
+            Geo.LocalFrame(up, out var east, out var north);
+            var fwd = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
+            var right = fwd.Cross(up).Normalized();
+            var e = _model?.EyeLocal ?? new Vector3(0, 1.7f, 0);
+            // repère du nœud : +X = droite, +Y = haut, −Z = avant
+            return PosD + right * e.X + up * e.Y - fwd * e.Z;
+        }
     }
 
     /// <summary>Pose le personnage sur le sol en (lat, lon).</summary>
@@ -95,6 +97,8 @@ public partial class Character : Node3D
     public void Step(Vec3d move, double speed, bool jump, double dt)
     {
         var up = PosD.Normalized();
+        if (Swimming) speed = Math.Min(speed, speed > 5 ? 2.4 : 1.4); // nage : brasse, crawl avec Maj
+        else if (Crouching) speed = Math.Min(speed, 1.6);
         Speed = 0;
         bool blocked = false;
         if (move.Length() > 1e-6)
@@ -126,10 +130,37 @@ public partial class Character : Node3D
             Yaw += diff * Math.Min(1, dt * 12);
         }
 
+        // Eau profonde : on nage, la tête hors de l'eau (lacs : profondeur inconnue, on nage toujours)
+        bool water = WaterSurface.At(PosD, out double waterLevel);
+        if (water)
+        {
+            Geo.ToLatLon(PosD.Normalized(), out double wla, out double wlo);
+            double bottom = HeightProvider.SurfaceHeight(wla, wlo);
+            double structure = Obstacles.SurfaceBelow(PosD);
+            bool onStructure = structure > waterLevel + 0.3 && Altitude >= structure - 0.3; // pont, ponton, bateau garé
+            bool deep = waterLevel - bottom > 1.2 || bottom >= waterLevel - 0.05; // mer profonde, ou lac / rivière (fond inconnu)
+            water = deep && !onStructure;
+        }
+        if (water && Altitude < waterLevel + 0.3)
+        {
+            Swimming = true;
+            Climbing = false;
+            Grounded = false;
+            _verticalSpeed = 0;
+            double target = waterLevel - (Speed > 0.3 ? SwimDepth : TreadDepth);
+            double a = Altitude;
+            PosD = PosD.Normalized() * (Geo.Radius + a + (target - a) * Math.Min(1, dt * 4)); // flotte, suit les vagues
+            GroundHeight = target;
+            Crouching = false;
+            Animate(dt);
+            return;
+        }
+        Swimming = false;
+
         // Escalade : Espace contre un mur (ou un tronc) pour monter, jusqu'au toit
         Climbing = jump && blocked;
-        if (Climbing) { _verticalSpeed = ClimbSpeed; Grounded = false; }
-        else if (jump && Grounded) { _verticalSpeed = JumpSpeed; Grounded = false; }
+        if (Climbing) { _verticalSpeed = ClimbSpeed; Grounded = false; Crouching = false; }
+        else if (jump && Grounded) { _verticalSpeed = JumpSpeed; Grounded = false; Crouching = false; }
         if (!Climbing) _verticalSpeed -= Gravity * dt;
         PosD += PosD.Normalized() * (_verticalSpeed * dt);
         // Plafond (dalle de l'étage au-dessus, dans un bâtiment) : on s'y cogne la tête
@@ -163,16 +194,23 @@ public partial class Character : Node3D
 
     void Animate(double dt)
     {
-        // Balancement des bras et des jambes, proportionnel à la vitesse
-        double wanted = Grounded ? Math.Min(1, Speed / 4.0) : 0.35;
-        _swing += (wanted - _swing) * Math.Min(1, dt * 8);
-        if (Grounded && Speed > 0) _phase += Speed * dt / 0.75 * Math.PI; // ~1,5 m par cycle
-        float a = (float)(Math.Sin(_phase) * 0.65 * _swing);
-        _legL.Rotation = new Vector3(a, 0, 0);
-        _legR.Rotation = new Vector3(-a, 0, 0);
-        _armL.Rotation = new Vector3(-a * 0.8f, 0, -0.08f);
-        _armR.Rotation = new Vector3(a * 0.8f, 0, 0.08f);
+        if (_model == null) return;
+        PlayerAppearance.SetMode(Swimming ? GameMode.Swimming : GameMode.Explore);
+        var m = new CharacterMotion
+        {
+            Speed = Speed,
+            Grounded = Grounded,
+            VerticalSpeed = _verticalSpeed,
+            Climbing = Climbing,
+            Swimming = Swimming,
+            Crouching = Crouching && Grounded,
+            LookPitch = LookPitch,
+        };
+        _model.Update(m, dt);
     }
+
+    /// <summary>Joue un geste (ouvrir une porte, ramasser, saluer…), voir <see cref="CharacterModel.PlayAction"/>.</summary>
+    public void PlayAction(string anim) => _model?.PlayAction(anim);
 
     /// <summary>Place le nœud Godot par rapport à la caméra (le monde est rendu relatif à elle).</summary>
     public void Place(Vec3d cameraPos, Basis worldRotation)

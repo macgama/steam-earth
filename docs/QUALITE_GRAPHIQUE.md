@@ -39,6 +39,8 @@ Tout passe par un seul point d'entrée : `GraphicsQuality` (`scripts/Graphics/Gr
 | Distance générale (`DrawDistanceScale`) | 0,5 | 0,75 | 1 | 1,4 |
 | Eau : vagues additionnées (`WaterWaves`) | 16 | 32 | 48 | 64 |
 | Eau : maillage en mer (`WaterMaxLevel`) | 5 m | 5 m | 2,5 m | 1,2 m |
+| Personnage : ombre / ourlets / normal maps et tissage | non | oui | oui | oui |
+| Personnage : reflets satinés, contour de la peau / peau translucide, reflets des cheveux | non / non | non / non | oui / non | oui / oui |
 
 « Élevé » correspond au rendu d'avant l'ajout des niveaux.
 
@@ -50,7 +52,7 @@ int waves = GraphicsQuality.Pick(16, 64, 128, 256);           // bas, moyen, él
 double dist = 5_000 * GraphicsQuality.Current.DrawDistanceScale;
 if (GraphicsQuality.Level >= QualityLevel.High) { /* effet coûteux */ }
 
-// 2. Ombres : demander selon le type d'objet (Terrain, Trees, Buildings, Vehicles, Small)
+// 2. Ombres : demander selon le type d'objet (Terrain, Trees, Buildings, Vehicles, Small, Characters)
 mesh.CastShadow = GraphicsQuality.ShadowFor(ShadowCaster.Vehicles);
 
 // 3. Réagir quand le joueur change de niveau (thread principal)

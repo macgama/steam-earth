@@ -19,7 +19,7 @@ public partial class Boat : Vehicle
     double _vSide, _vUp, _throttle, _rudder, _yawRate, _prop;
     Vec3d _heading = new(0, 0, -1);
     bool _afloat = true, _beached;
-    Node3D _motor, _propeller, _rider, _legL, _legR;
+    Node3D _motor, _propeller, _rider;
 
     public override VehicleKind Kind => VehicleKind.Boat;
     public override string Label => "Bateau";
@@ -157,13 +157,12 @@ public partial class Boat : Vehicle
         _propeller = Pivot(new Vector3(0, -0.85f, 0.25f), _motor);
         Part(new BoxMesh { Size = new Vector3(0.42f, 0.08f, 0.03f) }, Mat(new Color(0.7f, 0.7f, 0.7f), 0.3f, 0.9f), Vector3.Zero, _propeller);
 
-        _rider = Rider(new Vector3(-0.45f, 0.98f, 0.45f), out _legL, out _legR);
-        _legL.Rotation = _legR.Rotation = new Vector3(1.3f, 0, 0);
+        _rider = Rider(new Vector3(-0.45f, 0.96f, 0.5f), CharacterSeat.Boat);
     }
 
     protected override void Animate()
     {
-        if (_rider != null) _rider.Visible = Occupied;
+        UpdateRider();
         if (_motor != null) _motor.Rotation = new Vector3(0, (float)_rudder * 0.5f, 0);
         if (_propeller != null) _propeller.Rotation = new Vector3(0, 0, (float)(_prop % (2 * Math.PI)));
     }
