@@ -303,7 +303,7 @@ public partial class Main : Node3D
             if ((_frames > _minFrames && _idleFrames > 20) || _frames > 4000 || (_rideTest != null && _rideTest != "board" && _frames > 160))
             {
                 _camera.AutoForward = false;
-                if (_talkTest) { _talkTest = false; _population.TalkToNearest(); _minFrames = _frames + 5; return; }
+                if (_talkTest) { _talkTest = false; _population.TalkToNearest(); _minFrames = _frames + 8; return; }
                 GD.Print("[Population] " + _population.Describe().Replace("\n", "\n[Population] "));
                 var img = GetViewport().GetTexture().GetImage();
                 img.SavePng(_shotPath);

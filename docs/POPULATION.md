@@ -5,6 +5,8 @@ vieille ville de Berne à midi, deux ou trois personnes dans un hameau, presque 
 grosse averse. Chaque passant est un **habitant imaginaire mais plausible** de l'hectare où il se promène, avec son
 nom, son âge, son origine, son ménage et son activité, toujours les mêmes.
 
+![Fiche d'un passant dans la vieille ville de Berne (capture cloud, qualité Bas)](passants-berne.jpg)
+
 ## Ce qu'on voit en jeu
 
 - Autour du joueur (à pied, mais aussi en voiture, à vélo… tant qu'on est près du sol en Suisse), des passants

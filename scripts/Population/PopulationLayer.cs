@@ -39,7 +39,7 @@ public partial class PopulationLayer : Node3D
 
     public int Count { get; private set; }
     /// <summary>Plus personne à faire apparaître (captures automatiques).</summary>
-    public bool Idle => _toSpawn.Count == 0 && _timer < 0.55;
+    public bool Idle => _toSpawn.Count == 0;
     public int Wanted => _wanted;
     public string Status => !PopulationData.Loaded ? "données absentes" : !_enabled ? "hors de Suisse ou en vol" : $"{Count} passants (voulus {_wanted}, trottoirs {Walkways.Count:N0})";
 
@@ -216,7 +216,15 @@ public partial class PopulationLayer : Node3D
             }
 
         UpdateCard(player, lat, lon);
+        if (_debug && (_debugTimer -= delta) <= 0)
+        {
+            _debugTimer = 5;
+            GD.Print($"[Population] {Status} ; à {above:F0} m du sol, vitesse {Camera.Speed:F0} m/s, FPS {Engine.GetFramesPerSecond()}");
+        }
     }
+
+    readonly bool _debug = System.Array.IndexOf(OS.GetCmdlineUserArgs(), "--popdebug") >= 0;
+    double _debugTimer;
 
     bool InView(Vec3d p)
     {
@@ -338,6 +346,14 @@ public partial class PopulationLayer : Node3D
     {
         var p = Nearest(Camera.PlayerPos, 1e9);
         if (p == null) return false;
+        // le fait venir à 3,5 m devant le joueur (pour la capture)
+        var lead = p.Leader ?? p;
+        var player = Camera.PlayerPos;
+        var up = player.Normalized();
+        Geo.LocalFrame(up, out var e, out var n);
+        var fwd = n * Math.Cos(Camera.Yaw) + e * Math.Sin(Camera.Yaw);
+        var right = fwd.Cross(up).Normalized();
+        lead.PosD = Pedestrian.Ground(player + fwd * 3.5 + right * 0.6);
         Talk(p);
         return true;
     }
