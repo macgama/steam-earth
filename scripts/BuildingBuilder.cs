@@ -969,6 +969,8 @@ public static partial class BuildingBuilder
             ToTile(fr, (a + b) * 0.5 + n * 1.5, ctx, out double x, out double y);
             if (At(ctx, x, y, cd) != null) continue; // mur mitoyen
             if (i != doorEdge && Hash(seed * 13 + i) > 0.7) continue;
+            fr.LatLon((a + b) * 0.5 + n * 1.5, out double gla, out double glo);
+            if (Ground(gla, glo, ctx) < floor0 - 1.5) continue; // façade en contrebas (bâtiment en pente) : pas de vitrine en l'air
             var a0 = a + d * 0.4; var b0 = b - d * 0.4;
             var a1 = a0 + n * 1.1; var b1 = b0 + n * 1.1;
             m.Quad(fr.P(a0, h + 0.45), fr.P(b0, h + 0.45), fr.P(b1, h), fr.P(a1, h), fr.Dir(n.X * 0.4, n.Y * 0.4, 1), col,

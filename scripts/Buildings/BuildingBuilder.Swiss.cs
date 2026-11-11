@@ -218,6 +218,18 @@ public static partial class BuildingBuilder
         double levelH = usable / levels;
         if (levelH < 2.4 && usable >= 2.4) { levels = Math.Max(1, (int)Math.Floor(usable / 2.6)); levelH = usable / levels; }
         if (usable < 0.5) levelH = FloorHeight;
+
+        // Intérieur : sous le toit le plus bas (bâtiments en gradins, terrasses, annexes basses), sinon les étages
+        // et les meubles dépasseraient des parties basses du bâtiment
+        double inCeil = Math.Min(eave, gmin + LowRoof(b, ext, holes));
+        int inLevels = levels; double inLevelH = levelH, inEave = eave;
+        if (inCeil < eave - 0.3)
+        {
+            double u = inCeil - floor0;
+            inLevels = Math.Max(1, (int)Math.Floor((u + 0.3) / levelH));
+            inLevelH = Math.Min(levelH, u / inLevels);
+            inEave = floor0 + inLevels * inLevelH;
+        }
         var map = new WallMap(floor0, Math.Max(levelH, 1.0));
 
         bool pitched = false;
@@ -233,7 +245,7 @@ public static partial class BuildingBuilder
 
         // Porte : sur un vrai mur qui donne dehors, le plus près du niveau du sol
         bool enterable = !SwissBuildings3D.Closed(b) && BuildingKinds.Enterable(kind) && footprint >= 16 && footprint <= 40_000
-            && ext.Count <= 160 && usable >= 2.3 && b.WallTris > 0;
+            && ext.Count <= 160 && usable >= 2.3 && inEave - floor0 >= 2.3 && b.WallTris > 0;
         int doorEdge = -1; double doorT0 = 0, doorT1 = 0, doorH = 0, doorGround = 0; V2 doorOut = default;
         if (enterable)
         {
@@ -330,13 +342,53 @@ public static partial class BuildingBuilder
                 Places = cd.Places?.Names ?? new(),
                 Frame = new LocalFrame(fr.C, fr.C * R),
                 Ring = ext, Holes = holes, Area = footprint, Seed = seed, Style = style, WallColor = wall,
-                BaseH = baseH, Floor0 = floor0, Eave = eave, Top = top, Floors = Math.Max(levels, 1), LevelH = levelH,
+                BaseH = baseH, Floor0 = floor0, Eave = inEave, Top = top, Floors = Math.Max(inLevels, 1), LevelH = inLevelH,
                 DoorA = da, DoorB = db, DoorOut = doorOut, DoorH = doorH, DoorGround = doorGround, Solid = solid,
             };
             foreach (var p in ext) info.BoundRadius = Math.Max(info.BoundRadius, p.Length);
             ctx.Data.Infos.Add(info);
         }
         ctx.Data.PerArea[area]++;
+    }
+
+    /// <summary>Hauteur basse du toit au-dessus de l'emprise (8e centile d'une grille de points, m au-dessus du pied
+    /// des murs) : là où le plafond de l'intérieur peut aller sans sortir du bâtiment. Infini sans toit.</summary>
+    static double LowRoof(SwissBuildings3D.Building b, List<V2> ext, List<List<V2>> holes)
+    {
+        if (b.RoofTris == 0) return double.MaxValue;
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        foreach (var p in ext) { x0 = Math.Min(x0, p.X); y0 = Math.Min(y0, p.Y); x1 = Math.Max(x1, p.X); y1 = Math.Max(y1, p.Y); }
+        double step = Math.Clamp(Math.Sqrt((x1 - x0) * (y1 - y0)) / 18, 1.0, 4.0);
+        int nx = Math.Max(1, (int)((x1 - x0) / step)), ny = Math.Max(1, (int)((y1 - y0) / step));
+        var z = new double[nx * ny];
+        Array.Fill(z, double.NaN);
+        var V = b.Verts;
+        for (int k = b.WallTris * 3; k + 2 < b.Idx.Length; k += 3)
+        {
+            Vector3 a = V[b.Idx[k]], c = V[b.Idx[k + 1]], d = V[b.Idx[k + 2]];
+            double det = (c.X - a.X) * (d.Y - a.Y) - (d.X - a.X) * (c.Y - a.Y);
+            if (Math.Abs(det) < 1e-6) continue; // pan vertical
+            int i0 = Math.Max(0, (int)((Math.Min(a.X, Math.Min(c.X, d.X)) - x0) / step - 0.5)), i1 = Math.Min(nx - 1, (int)((Math.Max(a.X, Math.Max(c.X, d.X)) - x0) / step));
+            int j0 = Math.Max(0, (int)((Math.Min(a.Y, Math.Min(c.Y, d.Y)) - y0) / step - 0.5)), j1 = Math.Min(ny - 1, (int)((Math.Max(a.Y, Math.Max(c.Y, d.Y)) - y0) / step));
+            for (int j = j0; j <= j1; j++)
+                for (int i = i0; i <= i1; i++)
+                {
+                    double px = x0 + (i + 0.5) * step, py = y0 + (j + 0.5) * step;
+                    double u = ((px - a.X) * (d.Y - a.Y) - (d.X - a.X) * (py - a.Y)) / det;
+                    double v = ((c.X - a.X) * (py - a.Y) - (px - a.X) * (c.Y - a.Y)) / det;
+                    if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
+                    double h = a.Z + u * (c.Z - a.Z) + v * (d.Z - a.Z);
+                    ref double cell = ref z[j * nx + i];
+                    if (!(h <= cell)) cell = h; // le pan le plus haut (débords, lucarnes)
+                }
+        }
+        var hs = new List<double>();
+        for (int j = 0; j < ny; j++)
+            for (int i = 0; i < nx; i++)
+                if (!double.IsNaN(z[j * nx + i]) && Poly2.Inside(ext, holes, new V2(x0 + (i + 0.5) * step, y0 + (j + 0.5) * step))) hs.Add(z[j * nx + i]);
+        if (hs.Count < 4) return double.MaxValue;
+        hs.Sort();
+        return hs[(int)(hs.Count * 0.08)];
     }
 
     static bool InsideAny(List<V2> ext, List<List<V2>> holes, List<(List<V2> outer, List<List<V2>> holes)> others, V2 p)
