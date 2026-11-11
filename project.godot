@@ -34,3 +34,7 @@ wind={
 "type": "vec4",
 "value": Vector4(0, 1, 0, 0)
 }
+
+[internationalization]
+
+locale/fallback="fr"

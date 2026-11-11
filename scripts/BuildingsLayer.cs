@@ -455,7 +455,7 @@ public partial class BuildingsLayer : Node3D
     void UpdateHover()
     {
         _hover = null;
-        if ((Menu != null && Menu.IsOpen) || (Start != null && Start.IsOpen)
+        if ((Menu != null && Menu.IsOpen) || (Start != null && Start.IsOpen) || GameUi.MenuOpen
             || Camera.Altitude - Camera.GroundHeight < PromptMinHeight) { _prompt.Visible = false; return; }
         _targets.Clear();
         Places?.CollectTargets(_targets);

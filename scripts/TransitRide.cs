@@ -54,6 +54,8 @@ public partial class TransitRide : Node3D, IRide
 
     public string Status => _tt == null ? _loadStatus : $"{_tt.Stations:N0} arrêts, {_tt.Trips:N0} courses (horaire {_tt.FeedVersion})";
     public bool Busy => _state != State.Idle;
+    /// <summary>Le tableau des départs est affiché (il se ferme avec Échap).</summary>
+    public bool BoardOpen => _state == State.Board;
     public bool Loaded => _load.IsCompleted;
 
     // IRide

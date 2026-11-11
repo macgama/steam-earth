@@ -209,6 +209,20 @@ public partial class StartMenu : CanvasLayer
         Look();
     }
 
+    /// <summary>Échap : retour là où l'on était avant d'ouvrir le menu.</summary>
+    public void Cancel()
+    {
+        if (_saved != null) Resume(); else Close();
+    }
+
+    /// <summary>Mémorise tout de suite la position (avant de revenir à l'écran titre).</summary>
+    public void SaveNow()
+    {
+        Geo.ToLatLon(Camera.PlayerPos.Normalized(), out double lat, out double lon);
+        _saved = new SavedPos { Lat = lat, Lon = lon, Height = Math.Max(0, Camera.Altitude - Camera.GroundHeight), Yaw = Camera.Yaw * 180 / Math.PI };
+        try { File.WriteAllText(SavePath, JsonSerializer.Serialize(_saved)); } catch (Exception) { }
+    }
+
     void Resume()
     {
         Close();
@@ -283,7 +297,7 @@ public partial class StartMenu : CanvasLayer
     {
         // Position gardée pour « Reprendre » (toutes les 5 s, pas pendant le menu)
         _saveClock += delta;
-        if (_saveClock < 5 || IsOpen) return;
+        if (_saveClock < 5 || IsOpen || GameUi.MenuOpen) return; // pas l'orbite de l'écran titre
         _saveClock = 0;
         Geo.ToLatLon(Camera.PlayerPos.Normalized(), out double lat, out double lon);
         var p = new SavedPos { Lat = lat, Lon = lon, Height = Math.Max(0, Camera.Altitude - Camera.GroundHeight), Yaw = Camera.Yaw * 180 / Math.PI };

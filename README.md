@@ -13,11 +13,20 @@ On peut aller de la marche à pied jusqu'à l'orbite sans changer de scène.
 2. Cloner ce dépôt, puis dans Godot : *Importer* → choisir `project.godot`.
 3. Appuyer sur **F5**. Au premier lancement, Godot compile le C#.
 
+Le jeu s'ouvre sur l'**écran titre** (la Terre tourne derrière le menu) : *Jouer* mène au choix du lieu de départ,
+*Options* règle les graphismes, la langue (français / anglais), la taille de l'interface, le plein écran, les unités,
+la sensibilité de la souris. En jeu, un HUD discret montre la vitesse, l'altitude, l'heure locale et la météo réelle,
+avec une boussole en haut.
+
 ### Commandes
 
 | Touche | Action |
 |---|---|
-| Clic gauche / Échap | capturer / libérer la souris |
+| Échap | menu pause (le jeu s'arrête) : reprendre, changer de lieu, options, commandes, crédits, menu principal, quitter |
+| F1 | liste des commandes (les lettres suivent la disposition du clavier : Z Q S D en AZERTY) |
+| F2 / F3 | masquer le HUD / informations techniques (chunks, téléchargements, météo détaillée…) |
+| F11 | plein écran |
+| Clic gauche / Alt maintenu | capturer la souris / la libérer (pour cliquer sur un nom de ville) |
 | Z Q S D (W A S D en QWERTY) | se déplacer |
 | Espace ou E / C ou A | monter / descendre |
 | Maj | vitesse ×8 |
