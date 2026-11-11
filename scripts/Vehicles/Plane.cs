@@ -55,6 +55,8 @@ public partial class Plane : Vehicle
         Throttle = 0.65; OnGround = false;
     }
 
+    public override void StopAtBorder() { Vel = new Vec3d(0, 0, 0); }
+
     public override void Step(VehicleInput input, double dt)
     {
         int n = Math.Clamp((int)Math.Ceiling(dt * 120), 1, 12);

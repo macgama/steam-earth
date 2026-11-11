@@ -189,6 +189,7 @@ public partial class GameUi : CanvasLayer
             Bathymetry.Attribution,
             "Lumières nocturnes : NASA Black Marble",
             "Villes et pays : Natural Earth ; aéroports : OurAirports",
+            "Frontière suisse : swissBOUNDARIES3D © swisstopo",
             Timetable.Attribution,
             "Météo et houle : NOAA GFS / WAVEWATCH III",
         })

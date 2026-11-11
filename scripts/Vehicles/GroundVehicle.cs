@@ -63,6 +63,8 @@ public partial class GroundVehicle : Vehicle
         V = 0; _vUp = 0; _steer = 0; Grounded = true;
     }
 
+    public override void StopAtBorder() { V = 0; _yawRate = 0; }
+
     public override void Step(VehicleInput input, double dt)
     {
         int n = Math.Clamp((int)Math.Ceiling(Math.Abs(V) * dt / 0.5), 1, 24);

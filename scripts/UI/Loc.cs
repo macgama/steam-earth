@@ -167,5 +167,15 @@ public static class Loc
         ["village"] = "village",
         ["localité"] = "place",
         ["hab."] = "inhab.",
+
+        // au sol seulement en Suisse (SwissZone)
+        [SwissZone.GroundOnlyInSwitzerland] = "Outside Switzerland you can only fly over: walking, cycling, driving and boating are for Switzerland only",
+        [SwissZone.BorderBlocked] = "Swiss border: beyond it, flying only (G → plane)",
+        [SwissZone.FlyOnly] = "Outside Switzerland: flying only, at least 300 m above the ground",
+        [SwissZone.CannotLand] = "You can't land outside Switzerland: flying over only",
+        [SwissZone.CannotExit] = "You can't get out outside Switzerland",
+        [SwissZone.OnlyPlane] = "Outside Switzerland, only the plane is available",
+        ["survol"] = "flying over",
+        ["En Suisse : à pied, à vélo, en voiture, en bateau. Ailleurs (✈) : survol seulement."] = "In Switzerland: on foot, by bike, car or boat. Elsewhere (✈): flying over only.",
     };
 }

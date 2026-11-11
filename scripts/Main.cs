@@ -58,6 +58,7 @@ public partial class Main : Node3D
         LandCover.Init();
         TimeZones.Init();
         Geography.Init();
+        SwissZone.Init(); // au sol seulement en Suisse et au Liechtenstein, survol ailleurs
         NightLights.Init();
         Overture.Init(System.IO.Path.Combine(OS.GetUserDataDir(), "cache", "overture"));
 
@@ -129,6 +130,7 @@ public partial class Main : Node3D
         _buildings.Start = _start;
         _vehicles = new VehicleManager { Name = "Vehicles", Camera = _camera, Weather = _weather, Atmosphere = _atmosphere, ProcessMode = ProcessModeEnum.Pausable };
         AddChild(_vehicles);
+        SwissZone.Notify = t => _vehicles.Message(t, 4);
         _menu.Arrived += c => _buildings.Build(c.Capital, c.Lat, c.Lon, BuildingsLayer.RadiusFor("capital", 0), BuildingsLayer.MaxRadiusFor("capital", 0));
 
         _menu.ShowButton = false; // Tab, ou le menu pause

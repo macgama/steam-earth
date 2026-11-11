@@ -56,6 +56,7 @@ public partial class VehicleManager : CanvasLayer
         AddButton(row, "3  Bateau", VehicleKind.Boat);
         AddButton(row, "4  Avion", VehicleKind.Plane);
         box.AddChild(new Label { Text = "Le bateau va sur l'eau la plus proche. L'avion apparaît en vol si tu voles (caméra libre), sinon au sol.", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color(1, 1, 1, 0.7f) });
+        box.AddChild(new Label { Text = SwissZone.OnlyPlane, HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color(1, 0.88f, 0.55f) });
 
         _message = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false };
         _message.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterBottom, Control.LayoutPresetMode.KeepSize, 90);
@@ -113,6 +114,7 @@ public partial class VehicleManager : CanvasLayer
     {
         if (Camera.Vehicle != null)
         {
+            if (Camera.Vehicle.CanExit && !SwissZone.Contains(Camera.Vehicle.ExitPoint)) { Message(SwissZone.CannotExit, 3); return; }
             if (!Camera.LeaveVehicle()) Message(Camera.Vehicle is Plane p && !p.OnGround ? "Pose-toi d'abord pour descendre de l'avion" : "Arrête-toi pour descendre", 2.5);
             return;
         }
@@ -131,6 +133,8 @@ public partial class VehicleManager : CanvasLayer
     public Vehicle Spawn(VehicleKind kind)
     {
         if (Camera.Ride != null) { Message("Descends d'abord du train ou du bus (H)", 2.5); return null; }
+        // Hors de Suisse : survol seulement, donc seul l'avion (qui apparaît en vol)
+        if (kind != VehicleKind.Plane && !SwissZone.Contains(Camera.PlayerPos)) { Message(SwissZone.OnlyPlane, 4); return null; }
         Vec3d basePos; double yaw;
         bool flying = false;
         if (Camera.Vehicle != null)

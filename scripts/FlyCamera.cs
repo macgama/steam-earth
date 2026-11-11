@@ -49,6 +49,9 @@ public partial class FlyCamera : Camera3D
 
     public void Teleport(double lat, double lon, double heightAboveGround, double yawDeg, double pitchDeg)
     {
+        // Hors de Suisse : seulement le survol (pas de personnage ni de véhicule au sol, au moins 300 m au-dessus du relief)
+        bool outside = !SwissZone.Contains(lat, lon);
+        if (outside) heightAboveGround = Math.Max(heightAboveGround, SwissZone.MinFlightHeight);
         if (Vehicle is Plane plane && heightAboveGround > 30)
         {
             // En avion, on garde l'avion : il est replacé en vol au-dessus du lieu
@@ -62,6 +65,11 @@ public partial class FlyCamera : Camera3D
             return;
         }
         if (Vehicle != null) { LeaveVehicle(true); }
+        if (outside && Walk)
+        {
+            ToFlight();
+            SwissZone.Say(SwissZone.GroundOnlyInSwitzerland);
+        }
         if (Walk && Body != null)
         {
             // En marche, on pose le personnage au sol et la caméra se place derrière lui
@@ -178,6 +186,13 @@ public partial class FlyCamera : Camera3D
         double above = Altitude - eye;
         if (above < 0) PosD = up * (Geo.Radius + eye);
         Grounded = above < 0.05;
+        // Hors de Suisse : survol seulement, au moins 300 m au-dessus du sol (ni atterrissage ni plongée)
+        if (!SwissZone.Contains(lat, lon) && Altitude < GroundHeight + SwissZone.MinFlightHeight)
+        {
+            PosD = up * (Geo.Radius + GroundHeight + SwissZone.MinFlightHeight);
+            Grounded = false;
+            if (!InputBlocked) SwissZone.Say(SwissZone.FlyOnly);
+        }
         // Décors : la caméra ne rentre pas dans les bâtiments ni les troncs. Arrivée par le haut : posée sur le
         // toit ; sinon repoussée hors des murs.
         if (agl < 300 && Obstacles.Inside(PosD, 0.3, out double roof))
@@ -210,7 +225,15 @@ public partial class FlyCamera : Camera3D
         // la tête suit le regard (vue arrière : seulement l'écart avec l'inclinaison habituelle de la caméra)
         Body.LookPitch = ThirdPerson ? (Pitch - ThirdPersonPitch) * 0.6 : Pitch;
 
+        var before = Body.PosD;
         Body.Step(move, sprint ? SprintSpeed : SlowWalk ? StrollSpeed : WalkSpeed, jump, delta);
+        // Frontière suisse : mur invisible (au-delà, seulement en vol)
+        if (!SwissZone.Contains(Body.PosD))
+        {
+            if (!SwissZone.Contains(before)) { ToFlight(); SwissZone.Say(SwissZone.GroundOnlyInSwitzerland); return; }
+            Body.PosD = before.Normalized() * Body.PosD.Length();
+            SwissZone.Say(SwissZone.BorderBlocked);
+        }
         if (!ThirdPerson) Body.Yaw = Yaw; // première personne : le corps regarde où regarde la caméra
         Speed = Body.Speed;
         Grounded = Body.Grounded;
@@ -321,7 +344,17 @@ public partial class FlyCamera : Camera3D
             input.Brake = Input.IsPhysicalKeyPressed(Key.Space);
         }
         if (AutoForward) { if (Vehicle is Plane) input.ThrottleUp = true; else input.Throttle = 1; }
+        var before = Vehicle.PosD;
         Vehicle.Step(input, Math.Min(delta, 0.25)); // images très lentes : on ralentit plutôt que de sauter des obstacles
+        // Hors de Suisse : l'avion reste en vol ; au sol (avion qui roule compris) et sur l'eau, on s'arrête à la frontière
+        if (Vehicle is Plane { OnGround: false } flying) SwissZone.ConstrainPlane(flying, Math.Min(delta, 0.25));
+        else if (!SwissZone.Contains(Vehicle.PosD))
+        {
+            if (!SwissZone.Contains(before)) { ToFlight(); SwissZone.Say(SwissZone.GroundOnlyInSwitzerland); return; }
+            Vehicle.PosD = before;
+            Vehicle.StopAtBorder();
+            SwissZone.Say(SwissZone.BorderBlocked);
+        }
         Speed = Math.Abs(Vehicle.Speed);
         Grounded = Vehicle is not Plane p || p.OnGround;
         FollowVehicle(delta);
@@ -368,6 +401,7 @@ public partial class FlyCamera : Camera3D
     public bool LeaveVehicle(bool force = false)
     {
         if (Vehicle == null || (!force && !Vehicle.CanExit)) return false;
+        if (!force && !SwissZone.Contains(Vehicle.ExitPoint)) return false; // on ne descend qu'en Suisse
         var v = Vehicle;
         Vehicle = null;
         v.Occupied = false;
@@ -390,6 +424,8 @@ public partial class FlyCamera : Camera3D
     /// </summary>
     public void SetWalk(bool walk)
     {
+        // Hors de Suisse, pas de personnage : on reste en vol
+        if (walk && !SwissZone.Contains(Vehicle?.ExitPoint ?? PosD)) { SwissZone.Say(SwissZone.GroundOnlyInSwitzerland); return; }
         if (Vehicle != null) LeaveVehicle(true);
         Walk = walk;
         if (Body == null) return;
@@ -402,6 +438,16 @@ public partial class FlyCamera : Camera3D
         else Body.PlaceAt(up * (PosD.Length() - EyeHeight), Yaw);
         Pitch = ThirdPerson ? ThirdPersonPitch : 0;
         FollowBody();
+    }
+
+    /// <summary>Hors de Suisse : on quitte le personnage ou le véhicule (laissé sur place) et on reprend le vol libre
+    /// depuis la caméra, qui est remontée au-dessus de <see cref="SwissZone.MinFlightHeight"/>.</summary>
+    void ToFlight()
+    {
+        if (Vehicle != null) { Vehicle.Occupied = false; Vehicle = null; }
+        Walk = false;
+        if (Body != null) Body.Visible = false;
+        Speed = 0;
     }
 
     /// <summary>Rotation planète → Godot : est → +X, haut → +Y, nord → −Z.</summary>

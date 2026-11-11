@@ -57,6 +57,20 @@ avec une boussole en haut.
 
 La vitesse s'adapte à la hauteur au-dessus du sol : lente près du sol, très rapide en orbite.
 
+## Règle du jeu : au sol en Suisse, survol ailleurs
+
+Pour l'instant, seules la **Suisse et le Liechtenstein** sont à haute précision : on y joue au sol (à pied, à vélo,
+en voiture, en bateau, atterrissage en avion). **Partout ailleurs, on survole la Terre sans toucher le sol** (vol libre
+ou avion), au moins 300 m au-dessus du relief.
+- La frontière est la vraie : swissBOUNDARIES3D (© swisstopo, OGD), territoire national avec les enclaves de Büsingen
+  et Campione exclues, rastérisé à 1/3600° (≈ 31 × 21 m) par `tools/swissmask/build_mask.py` dans `data/geo/swiss_mask.bin.gz` (58 Ko).
+- À la frontière, à pied, à vélo, en voiture, en bateau (lacs frontaliers coupés comme sur la carte nationale)
+  ou en avion qui roule : mur invisible avec un message. En vol libre ou en avion, on la passe, et l'on est remonté
+  au-dessus de 300 m ; impossible de se poser, de descendre du véhicule ou d'appeler le personnage (F) hors de Suisse.
+- Menu des véhicules (G) hors de Suisse : seulement l'avion, qui apparaît en vol. Menu de départ (M) : les lieux hors
+  de Suisse sont marqués ✈ et l'on y arrive en vol. Le HUD indique « survol » hors de Suisse.
+- Code : `scripts/SwissZone.cs` (masque, messages FR/EN, plancher de l'avion), appelé par `FlyCamera` et `VehicleManager`.
+
 ## Comment ça marche
 
 - **Cube-sphère** (`Geo.cs`) : les 6 faces d'un cube projetées sur une sphère de 6 371 km.
@@ -488,7 +502,8 @@ Quaternius, CC0. Détails : [`docs/PERSONNAGE.md`](docs/PERSONNAGE.md).
 | `data/nightlights/nightlights.bin.gz` | NASA Earth Observatory, Black Marble 2016 (Suomi NPP VIIRS), domaine public | ~5 km |
 | `data/swissalti3d_index.bin` | index des tuiles swissALTI3D (API STAC de data.geo.admin.ch), `tools/swissalti3d/build_index.py` | 1 km |
 | Météo | NOAA GFS (domaine public), via AWS Open Data | 1°, toutes les 3 h |
-| `data/geo/*` | Natural Earth 1:10m (domaine public) | ~1 km |
+| `data/geo/*` (sauf le masque suisse) | Natural Earth 1:10m (domaine public) | ~1 km |
+| `data/geo/swiss_mask.bin.gz` | frontière de la Suisse et du Liechtenstein, swissBOUNDARIES3D 2026 © swisstopo (OGD, usage commercial autorisé) | 1/3600° (~30 m) |
 | `data/timezones/timezones.bin.gz` | timezone-boundary-builder, © contributeurs OpenStreetMap, licence ODbL | 0,025° |
 | Bâtiments (streaming, à la demande) | Overture Maps buildings : © contributeurs OpenStreetMap (ODbL), Microsoft ML Buildings (ODbL), Google Open Buildings (CC BY 4.0), USGS (domaine public) | tuiles z14 |
 | Bâtiments en Suisse (streaming, à la demande) | swissBUILDINGS3D 3.0 © swisstopo (OGD, usage commercial autorisé) | tuiles z14 (release `swissbuildings3d`) |

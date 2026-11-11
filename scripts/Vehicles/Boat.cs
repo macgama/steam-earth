@@ -38,6 +38,8 @@ public partial class Boat : Vehicle
         V = 0; _vSide = 0; _vUp = 0; _throttle = 0;
     }
 
+    public override void StopAtBorder() { V = 0; _vSide = 0; _yawRate = 0; }
+
     public override void Step(VehicleInput input, double dt)
     {
         int n = Math.Clamp((int)Math.Ceiling(Math.Abs(V) * dt / 0.5), 1, 16);
