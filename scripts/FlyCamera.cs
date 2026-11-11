@@ -49,15 +49,18 @@ public partial class FlyCamera : Camera3D
 
     public void Teleport(double lat, double lon, double heightAboveGround, double yawDeg, double pitchDeg)
     {
-        if (Vehicle is Plane plane && heightAboveGround > 30)
+        if (Vehicle != null && Vehicle.Spec.InAir && heightAboveGround > 30)
         {
-            // En avion, on garde l'avion : il est replacé en vol au-dessus du lieu
+            // En avion ou en hélicoptère, on le garde : il est replacé en vol au-dessus du lieu
             double g = HeightProvider.SurfaceHeight(lat, lon);
             var up = Geo.FromLatLon(lat, lon);
             Geo.LocalFrame(up, out var e, out var n);
             double y = yawDeg * Math.PI / 180;
-            plane.PlaceInAir(up * (Geo.Radius + g + heightAboveGround), n * Math.Cos(y) + e * Math.Sin(y), 55);
-            Yaw = y; Pitch = plane.CameraPitch;
+            var pos = up * (Geo.Radius + g + heightAboveGround);
+            var dir = n * Math.Cos(y) + e * Math.Sin(y);
+            if (Vehicle is Plane plane) plane.PlaceInAir(pos, dir, plane.Spec.StallSpeed * 1.7);
+            else if (Vehicle is Helicopter heli) heli.PlaceInAir(pos, dir);
+            Yaw = y; Pitch = Vehicle.CameraPitch;
             FollowVehicle(0);
             return;
         }
@@ -311,33 +314,37 @@ public partial class FlyCamera : Camera3D
             if (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down)) input.Throttle -= 1;
             if (Input.IsPhysicalKeyPressed(Key.D)) input.Steer += 1;
             if (Input.IsPhysicalKeyPressed(Key.A)) input.Steer -= 1;      // Q en AZERTY
-            bool plane = Vehicle is Plane;
-            if (Input.IsPhysicalKeyPressed(Key.Right)) { if (plane) input.Rudder += 1; else input.Steer += 1; }
-            if (Input.IsPhysicalKeyPressed(Key.Left)) { if (plane) input.Rudder -= 1; else input.Steer -= 1; }
+            bool air = Vehicle.Spec.InAir; // avion : palonnier ; hélicoptère : glisser de côté
+            if (Input.IsPhysicalKeyPressed(Key.Right)) { if (air) input.Rudder += 1; else input.Steer += 1; }
+            if (Input.IsPhysicalKeyPressed(Key.Left)) { if (air) input.Rudder -= 1; else input.Steer -= 1; }
+            input.Rudder = Math.Clamp(input.Rudder, -1, 1);
             input.Throttle = Math.Clamp(input.Throttle, -1, 1);
             input.Steer = Math.Clamp(input.Steer, -1, 1);
             input.Boost = input.ThrottleUp = Input.IsPhysicalKeyPressed(Key.Shift);
             input.ThrottleDown = Input.IsPhysicalKeyPressed(Key.Ctrl);
             input.Brake = Input.IsPhysicalKeyPressed(Key.Space);
         }
-        if (AutoForward) { if (Vehicle is Plane) input.ThrottleUp = true; else input.Throttle = 1; }
+        if (AutoForward) { if (Vehicle is Plane) input.ThrottleUp = true; else if (Vehicle is Helicopter) { input.ThrottleUp = Vehicle.HeightAboveGround < 40; input.Throttle = Vehicle.HeightAboveGround > 15 ? 1 : 0; } else input.Throttle = 1; }
         Vehicle.Step(input, Math.Min(delta, 0.25)); // images très lentes : on ralentit plutôt que de sauter des obstacles
         Speed = Math.Abs(Vehicle.Speed);
-        Grounded = Vehicle is not Plane p || p.OnGround;
+        Grounded = Vehicle.Grounded;
         FollowVehicle(delta);
     }
 
-    /// <summary>Caméra derrière le véhicule ; sans mouvement de souris, elle revient doucement dans l'axe.</summary>
+    /// <summary>Caméra derrière le véhicule ; sans mouvement de souris, elle revient doucement dans l'axe.
+    /// En vue à la première personne (V), elle est aux yeux du conducteur et regarde devant le véhicule.</summary>
     void FollowVehicle(double delta)
     {
         _sinceMouse += delta;
+        Vehicle.FirstPerson = !ThirdPerson;
+        if (!ThirdPerson) { FollowVehicleEyes(delta); return; }
         var target = Vehicle.CameraTarget;
         if (_sinceMouse > 1.5)
         {
             double diff = Math.IEEERemainder(Vehicle.HeadingYaw - Yaw, 2 * Math.PI);
             Yaw += diff * Math.Min(1, delta * 3);
             double pitch = Vehicle.CameraPitch;
-            if (Vehicle is Plane) pitch += 0.6 * Math.Asin(Math.Clamp(Vehicle.Fwd.Dot(Vehicle.PosD.Normalized()), -1, 1));
+            if (Vehicle.Spec.InAir && !Vehicle.Grounded) pitch += 0.6 * Vehicle.PitchAngle;
             Pitch += (pitch - Pitch) * Math.Min(1, delta * 2);
         }
         PosD = Chase(target, Vehicle.CameraDistance * _vehicleZoom);
@@ -347,6 +354,32 @@ public partial class FlyCamera : Camera3D
         Vehicle.Place(PosD, WorldRotation);
     }
 
+    double _eyeYaw, _eyePitch; // regard libre à la souris en vue intérieure (revient vers l'avant)
+
+    /// <summary>Vue intérieure : la caméra est aux yeux du conducteur, orientée comme le véhicule (roulis compris)
+    /// plus le regard à la souris, qui revient doucement vers l'avant.</summary>
+    void FollowVehicleEyes(double delta)
+    {
+        var v = Vehicle;
+        // le regard à la souris est l'écart entre Yaw/Pitch et le cap / l'assiette du véhicule
+        double dy = Math.IEEERemainder(Yaw - v.HeadingYaw, 2 * Math.PI);
+        double dp = Pitch - v.PitchAngle;
+        if (_sinceMouse > 1.5) { dy *= 1 - Math.Min(1, delta * 2); dp += (-0.08 - dp) * Math.Min(1, delta * 2); }
+        dy = Math.Clamp(dy, -2.4, 2.4); dp = Math.Clamp(dp, -1.0, 0.9);
+        _eyeYaw = dy; _eyePitch = dp;
+        Yaw = v.HeadingYaw + dy; Pitch = v.PitchAngle + dp;
+        PosD = v.EyePos;
+        Geo.ToLatLon(PosD.Normalized(), out double lat, out double lon);
+        GroundHeight = HeightProvider.SurfaceHeight(lat, lon);
+        UpdateTransform();
+        // orientation du véhicule (roulis, tangage) + regard
+        var basis = new Basis(v.Right.ToVector3(), v.Up.ToVector3(), (-v.Fwd).ToVector3());
+        var look = basis * new Basis(Vector3.Up, -(float)dy) * new Basis(Vector3.Right, (float)dp);
+        Transform = new Transform3D(WorldRotation * look, Vector3.Zero);
+        Near = 0.05f;
+        v.Place(PosD, WorldRotation);
+    }
+
     /// <summary>Monte dans un véhicule (le personnage disparaît, il est assis dedans).</summary>
     public void EnterVehicle(Vehicle v)
     {
@@ -354,7 +387,7 @@ public partial class FlyCamera : Camera3D
         Vehicle = v;
         v.Occupied = true;
         // tenue auto : casque à vélo, blouson de pilote, gilet de sauvetage…
-        PlayerAppearance.SetMode(v.Kind switch { VehicleKind.Bike => GameMode.Cycling, VehicleKind.Plane => GameMode.Flying, VehicleKind.Boat => GameMode.Sailing, _ => GameMode.Driving });
+        PlayerAppearance.SetMode(v.Spec.Family switch { VehicleFamily.Bicycle => GameMode.Cycling, VehicleFamily.Plane or VehicleFamily.Jet or VehicleFamily.Helicopter => GameMode.Flying, VehicleFamily.Boat or VehicleFamily.Sailboat => GameMode.Sailing, _ => GameMode.Driving });
         Walk = false;
         if (Body != null) Body.Visible = false;
         Yaw = v.HeadingYaw;
@@ -372,6 +405,7 @@ public partial class FlyCamera : Camera3D
         Vehicle = null;
         v.Occupied = false;
         PlayerAppearance.SetMode(GameMode.Explore);
+        v.FirstPerson = false;
         Speed = 0;
         if (Body == null) return true;
         Geo.ToLatLon(v.ExitPoint.Normalized(), out double lat, out double lon);

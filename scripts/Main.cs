@@ -33,6 +33,8 @@ public partial class Main : Node3D
     StartMenu _start;
     VehicleManager _vehicles;
     string _spawnVehicle;
+    bool _firstPerson;
+    string[] _showroom;
     GraphicsMenu _graphicsMenu;
     TransitLayer _transit;
     StreetNamesLayer _streets;
@@ -156,6 +158,8 @@ public partial class Main : Node3D
             if (a == "--walk") walk = true;
             // --vehicle=car|bike|boat|plane : fait apparaître un véhicule et monte dedans (tests)
             if (a.StartsWith("--vehicle=")) { _spawnVehicle = a.Substring(10); startMenu = false; }
+            if (a == "--firstperson") _firstPerson = true;
+            if (a.StartsWith("--showroom=")) _showroom = a.Substring(11).Split(','); // véhicules garés en rang devant la caméra (captures)
             if (a.StartsWith("--ride=")) { _rideTest = a.Substring(7); _minFrames = 300; } // N,minutes après le départ
             if (a == "--board") _rideTest = "board";
             if (a == "--fp") _camera.ThirdPerson = false;           // marche à la première personne
@@ -244,8 +248,8 @@ public partial class Main : Node3D
 
     void SpawnTestVehicle()
     {
-        var kind = _spawnVehicle switch { "bike" => VehicleKind.Bike, "boat" => VehicleKind.Boat, "plane" => VehicleKind.Plane, _ => VehicleKind.Car };
-        _vehicles.Spawn(kind);
+        _vehicles.Spawn(_spawnVehicle); // identifiant du catalogue : car, sport, bus, bike, moto, boat, sailboat, plane, airliner, heli…
+        if (_firstPerson) _camera.ThirdPerson = false;
     }
 
     public override void _Process(double delta)
@@ -270,6 +274,13 @@ public partial class Main : Node3D
         {
             if (_enterTest != null && EnterTest()) return;
             _idleFrames = _planet.Idle && _political.Ready && _roads.Idle && _places.Idle && _transit.Idle && _streets.Idle && _buildings.Idle && _ride.Loaded && StreamedRaster.Downloading == 0 && PmTilesArchive.Downloading == 0 ? _idleFrames + 1 : 0;
+            if (_showroom != null && _frames > _minFrames && _idleFrames > 20)
+            {
+                _vehicles.Showroom(_showroom);
+                _showroom = null;
+                _minFrames = _frames + 15;
+                return;
+            }
             if (_walkTest > 0 && ((_frames > _minFrames && _idleFrames > 20) || _camera.AutoForward))
             {
                 if (!_camera.AutoForward)
