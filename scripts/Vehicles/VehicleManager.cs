@@ -197,7 +197,7 @@ public partial class VehicleManager : CanvasLayer
         Message(kind switch
         {
             VehicleKind.Car => "Voiture : Z accélérer, S freiner / reculer, Q/D tourner, Espace frein à main",
-            VehicleKind.Bike => "Vélo : Z pédaler (Maj en danseuse), S freiner, Q/D tourner",
+            VehicleKind.Bike => "Vélo : Z pédaler (Maj en danseuse), S freiner / reculer, Q/D tourner",
             VehicleKind.Boat => "Bateau : Z avant, S arrière, Q/D gouvernail",
             _ => flying ? "Avion en vol : S cabrer, Z piquer, Q/D roulis, Maj/Ctrl gaz" : "Avion : Maj pour mettre les gaz, S pour décoller vers 100 km/h, Q/D pour diriger au sol",
         }, 6);

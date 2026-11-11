@@ -16,7 +16,7 @@ public partial class ControlsPanel : PanelContainer
     {
         ("Se déplacer", new[]
         {
-            ("{W} {A} {S} {D}", "Avancer, aller à gauche, reculer, aller à droite"),
+            ("{W} {A} {S} {D} ou ↑ ← ↓ →", "Avancer, aller à gauche, reculer, aller à droite"),
             ("Souris", "Regarder autour de soi (clic pour reprendre la souris)"),
             ("Espace / {E}", "Monter (vol libre)"),
             ("{C} / {Q}", "Descendre (vol libre)"),
@@ -38,10 +38,10 @@ public partial class ControlsPanel : PanelContainer
         {
             ("{G}", "Choisir un véhicule : voiture, vélo, bateau, avion"),
             ("{E}", "Monter dans le véhicule le plus proche / en descendre"),
-            ("{W} / {S}", "Accélérer / freiner (avion : piquer / cabrer)"),
+            ("{W} / {S} ou ↑ / ↓", "Accélérer / freiner, puis reculer à l'arrêt (avion : piquer / cabrer)"),
             ("{A} / {D}", "Tourner (avion : roulis)"),
             ("Maj / Ctrl", "Avion : plus / moins de gaz"),
-            ("← / →", "Avion : palonnier"),
+            ("← / →", "Tourner (avion : palonnier)"),
             ("Espace", "Avion : freins"),
         }),
         ("Monde", new[]

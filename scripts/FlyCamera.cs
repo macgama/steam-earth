@@ -155,10 +155,10 @@ public partial class FlyCamera : Camera3D
 
         var move = new Vec3d(0, 0, 0);
         bool keys = !InputBlocked;
-        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += forward;   // W = Z en AZERTY (touche physique)
-        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= forward;
-        if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
-        if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                      // A = Q en AZERTY
+        if (keys && (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up)) || AutoForward) move += forward;   // W = Z en AZERTY (touche physique)
+        if (keys && (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down))) move -= forward;
+        if (keys && (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right))) move += right;
+        if (keys && (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left))) move -= right;                      // A = Q en AZERTY
 
         if (keys && (Input.IsPhysicalKeyPressed(Key.Space) || Input.IsPhysicalKeyPressed(Key.E))) move += up;
         if (keys && (Input.IsPhysicalKeyPressed(Key.C) || Input.IsPhysicalKeyPressed(Key.Q))) move -= up;
@@ -197,10 +197,10 @@ public partial class FlyCamera : Camera3D
         var heading = north * Math.Cos(Yaw) + east * Math.Sin(Yaw);
         var right = heading.Cross(up).Normalized();
         var move = new Vec3d(0, 0, 0);
-        if (keys && Input.IsPhysicalKeyPressed(Key.W) || AutoForward) move += heading;   // W = Z en AZERTY
-        if (keys && Input.IsPhysicalKeyPressed(Key.S)) move -= heading;
-        if (keys && Input.IsPhysicalKeyPressed(Key.D)) move += right;
-        if (keys && Input.IsPhysicalKeyPressed(Key.A)) move -= right;                     // A = Q en AZERTY
+        if (keys && (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up)) || AutoForward) move += heading;   // W = Z en AZERTY
+        if (keys && (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down))) move -= heading;
+        if (keys && (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right))) move += right;
+        if (keys && (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left))) move -= right;                     // A = Q en AZERTY
         bool sprint = (keys && Input.IsPhysicalKeyPressed(Key.Shift)) || AutoForward;
         bool jump = (keys && Input.IsPhysicalKeyPressed(Key.Space)) || (AutoJump && AutoForward);
 
@@ -297,12 +297,16 @@ public partial class FlyCamera : Camera3D
         var input = new VehicleInput();
         if (keys)
         {
-            if (Input.IsPhysicalKeyPressed(Key.W)) input.Throttle += 1;   // Z en AZERTY
-            if (Input.IsPhysicalKeyPressed(Key.S)) input.Throttle -= 1;
+            // Flèches = autre jeu de touches (↑ avancer, ↓ freiner puis reculer) ; ← / → : palonnier en avion, direction sinon
+            if (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up)) input.Throttle += 1;   // Z en AZERTY
+            if (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down)) input.Throttle -= 1;
             if (Input.IsPhysicalKeyPressed(Key.D)) input.Steer += 1;
             if (Input.IsPhysicalKeyPressed(Key.A)) input.Steer -= 1;      // Q en AZERTY
-            if (Input.IsPhysicalKeyPressed(Key.Right)) input.Rudder += 1;
-            if (Input.IsPhysicalKeyPressed(Key.Left)) input.Rudder -= 1;
+            bool plane = Vehicle is Plane;
+            if (Input.IsPhysicalKeyPressed(Key.Right)) { if (plane) input.Rudder += 1; else input.Steer += 1; }
+            if (Input.IsPhysicalKeyPressed(Key.Left)) { if (plane) input.Rudder -= 1; else input.Steer -= 1; }
+            input.Throttle = Math.Clamp(input.Throttle, -1, 1);
+            input.Steer = Math.Clamp(input.Steer, -1, 1);
             input.Boost = input.ThrottleUp = Input.IsPhysicalKeyPressed(Key.Shift);
             input.ThrottleDown = Input.IsPhysicalKeyPressed(Key.Ctrl);
             input.Brake = Input.IsPhysicalKeyPressed(Key.Space);

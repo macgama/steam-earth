@@ -34,7 +34,7 @@ public partial class GroundVehicle : Vehicle
         {
             // Vélo de ville + cycliste : 85 kg, 250 W (700 W en danseuse avec Maj), ~30 km/h sur le plat
             _mass = 85; _maxForce = 260; _power = 250; _boostPower = 700; _cdA = 0.5; _crr = 0.007;
-            _brake = 650; _maxReverse = 0; _grip = 0.85;
+            _brake = 650; _maxReverse = 1.5; // à l'arrêt, S fait reculer le vélo en le poussant (~5 km/h) _grip = 0.85;
             _wheelbase = 1.05; _track = 0.1; _maxSteer = 0.6; _steerFade = 6; _wheelR = 0.34; _radius = 0.45;
         }
         else
@@ -174,7 +174,7 @@ public partial class GroundVehicle : Vehicle
         if (!Grounded) s += "   (en l'air)";
         if (_inWater) s += _bike ? "   dans l'eau !" : "   dans l'eau : le moteur est noyé !";
         s += _bike
-            ? "   [Z pédaler, Maj en danseuse, S freiner, Q/D tourner, E descendre]"
+            ? "   [Z pédaler, Maj en danseuse, S freiner / reculer, Q/D tourner, E descendre]"
             : "   [Z accélérer, S freiner / reculer, Q/D tourner, Espace frein à main, E descendre]";
         return s;
     }
