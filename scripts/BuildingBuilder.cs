@@ -503,9 +503,34 @@ public static class BuildingBuilder
         bool stadiumBowl = kind is BuildingKind.Stadium && holes.Count > 0 && footprint > 2000;
         if (plinth)
         {
-            // le socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
-            m.Material = FacadeMaterials.Code(look.Wall is FacadeSurface.Concrete or FacadeSurface.Metal ? FacadeSurface.Concrete : FacadeSurface.Stone);
-            Walls(ext, baseH, floor0, map, PlinthColor(look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? new Color(0.80f, 0.78f, 0.72f) : wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
+            double drop = floor0 - gmin;
+            if (drop >= 2.3 && style != WindowStyle.None && !isPart)
+            {
+                // Grand socle : comme les vraies maisons en pente, c'est un étage habitable maçonné (sous-sol côté aval)
+                // avec ses fenêtres, et souvent une porte de garage au niveau de la route d'en bas
+                int nb = Math.Max(1, (int)Math.Floor(drop / 2.5));
+                var low = new WallMap(gmin, drop / nb);
+                var basementStyle = style is WindowStyle.ShopResidential or WindowStyle.Glass ? WindowStyle.Residential
+                    : style is WindowStyle.ShopOffice ? WindowStyle.Office : style;
+                var mat = look.Wall switch
+                {
+                    FacadeSurface.Stone or FacadeSurface.Brick or FacadeSurface.Concrete => look.Wall,
+                    FacadeSurface.Metal => FacadeSurface.Concrete,
+                    _ => FacadeSurface.Render,
+                };
+                var col = look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood or FacadeSurface.Siding or FacadeSurface.TimberFrame or FacadeSurface.Metal
+                    ? (seed < 0.5 ? new Color(0.88f, 0.86f, 0.80f) : new Color(0.80f, 0.79f, 0.75f)) : wall;
+                m.Material = FacadeMaterials.Code(mat, look.Shutters);
+                Walls(ext, baseH, floor0, low, col, new Vector2((float)basementStyle, (float)seed), fr, m, -1, 0, 0, 0, 0);
+                if (kind is BuildingKind.House or BuildingKind.Apartments or BuildingKind.Generic or BuildingKind.Farm or BuildingKind.Hotel)
+                    GarageDoor(ext, cd, fr, ctx, floor0, seed, kind == BuildingKind.Apartments, m);
+            }
+            else
+            {
+                // petit socle : pierre ou béton, sans fenêtres, jusqu'au rez-de-chaussée
+                m.Material = FacadeMaterials.Code(look.Wall is FacadeSurface.Concrete or FacadeSurface.Metal ? FacadeSurface.Concrete : FacadeSurface.Stone);
+                Walls(ext, baseH, floor0, map, PlinthColor(look.Wall is FacadeSurface.Chalet or FacadeSurface.Wood ? new Color(0.80f, 0.78f, 0.72f) : wall, seed), new Vector2(0, (float)seed), fr, m, -1, 0, 0, 0, 0);
+            }
             m.Material = look.WallCode;
             Walls(ext, floor0, eave, map, wall, uv2, fr, m, doorEdge, doorT0, doorT1, floor0, doorH);
         }
@@ -634,6 +659,42 @@ public static class BuildingBuilder
                 or BuildingKind.Library or BuildingKind.Museum => 12 + 6 * seed,
             _ => area > 800 ? 9 + 6 * seed : 6 + 4 * seed,
         };
+    }
+
+    /// <summary>Porte de garage (sectionnelle, à lames horizontales) dans le socle, sur le mur le plus bas : là où une
+    /// route passe en contrebas. Deux portes côte à côte sur les longues façades d'immeubles.</summary>
+    static void GarageDoor(List<V2> ext, Cand cd, in LocalFrame fr, Ctx ctx, double floor0, double seed, bool block, MeshAcc m)
+    {
+        int best = -1; double bestG = double.MaxValue;
+        for (int i = 0; i < ext.Count; i++)
+        {
+            var a = ext[i]; var b = ext[(i + 1) % ext.Count];
+            double len = Poly2.Dist(a, b);
+            if (len < 3.4) continue;
+            var n = ((b - a) * (1 / len)).Right;
+            var mid = (a + b) * 0.5;
+            ToTile(fr, mid + n * 1.5, ctx, out double x, out double y);
+            if (At(ctx, x, y, cd) != null) continue; // mur mitoyen
+            fr.LatLon(mid + n * 1.5, out double la, out double lo);
+            double g = Ground(la, lo, ctx);
+            if (g < bestG) { bestG = g; best = i; }
+        }
+        if (best < 0 || floor0 - bestG < 2.5) return;
+        var A = ext[best]; var B = ext[(best + 1) % ext.Count];
+        double L = Poly2.Dist(A, B);
+        var d = (B - A) * (1 / L); var nn = d.Right;
+        int count = block && L > 8 ? 2 : 1;
+        double w = 2.5, gap = 0.6, total = count * w + (count - 1) * gap;
+        double start = (L - total) * (0.35 + 0.3 * Hash(seed * 17.3));
+        var cols = new[] { new Color(0.62f, 0.63f, 0.64f), new Color(0.40f, 0.27f, 0.17f), new Color(0.86f, 0.86f, 0.84f), new Color(0.32f, 0.34f, 0.36f) };
+        var col = cols[(int)(Hash(seed * 7.7) * cols.Length) % cols.Length];
+        m.Material = FacadeMaterials.Code(FacadeSurface.Siding);
+        for (int k = 0; k < count; k++)
+        {
+            double t0 = start + k * (w + gap);
+            var p0 = A + d * t0 + nn * 0.03; var p1 = A + d * (t0 + w) + nn * 0.03;
+            m.Side(fr, p0, p1, bestG - 0.3, bestG + 2.15, col, new Vector2(0, (float)seed), new Vector2(0, 0), new Vector2((float)w, 2.45f));
+        }
     }
 
     /// <summary>Socle sous le rez-de-chaussée : pierre grise (ou béton) un peu plus sombre que la façade.</summary>
